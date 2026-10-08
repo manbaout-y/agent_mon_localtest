@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "profile": "default",
+  "schema_profiles": ["agentmon_default", "agentmon_v4", "vllm_default", "vllm_0_18", "trajectory_default"],
+  "quality_gates": {
+    "min_p2_match_rate": null,
+    "min_p2_lifecycle_rate": null
+  },
+  "field_sources": ["EXPLICIT_MANIFEST", "CONFIG", "LOG", "ENVIRONMENT", "SOURCE", "INFERRED", "UNKNOWN"],
+  "npu_mapping_levels": ["LEVEL_1", "LEVEL_2", "LEVEL_3", "LEVEL_4", "NONE"]
+}

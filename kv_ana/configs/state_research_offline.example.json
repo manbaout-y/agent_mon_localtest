@@ -1,0 +1,15 @@
+{
+  "state_events": null,
+  "requests": null,
+  "agentmon_events": null,
+  "cost_trials": null,
+  "recovery_cases": null,
+  "state_comparisons": null,
+  "dependency_graph": null,
+  "capacities": {},
+  "type_budgets": {},
+  "policies": ["shared_lru", "type_partitioned_lru", "dependency_bundle_lru"],
+  "available_capabilities": [],
+  "schedule": null,
+  "capsule_max_bytes": 45000
+}

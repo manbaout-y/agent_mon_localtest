@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentmon-ascend"
+version = "0.1.0"
+description = "Low-overhead monitoring contracts for mini-SWE-agent, vLLM-Ascend, and Ascend NPU runs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "AgentMon Contributors"}]
+dependencies = []
+
+[project.optional-dependencies]
+parquet = ["pyarrow>=14"]
+analysis = ["numpy>=1.24", "pandas>=2", "pyarrow>=14", "zstandard>=0.22"]
+
+[project.scripts]
+agentmon = "agentmon.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agentmon = [
+  "py.typed",
+  "analysis/schemas/*.yaml",
+  "analysis/profiles/*.yaml",
+  "experiments/mechanisms/*.toml",
+  "experiments/mechanisms/*.yaml",
+]

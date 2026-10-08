@@ -1,0 +1,28 @@
+# Literature coverage map
+
+This is a coverage and interface map, not a claim that a simplified module reproduces a paper. v2 uses four labels: `exact_reproduction`, `mechanism_baseline`, `inspired_by`, and `interface_only`. No current paper entry is labeled exact reproduction.
+
+| Paper | Method family | Core mechanism represented here | Framework module | Status | Query | Attention | Training | Runtime | StatePair offline evaluation |
+|---|---|---|---|---|---:|---:|---:|---:|---|
+| CacheBlend | selective reuse/repair | project-derived static/row repair mechanism | `selective.py`; query-related portions use provider interface | inspired_by / mechanism_baseline | optional | optional | no | full system: yes | offline row-repair structure is testable; not the paper implementation |
+| EPIC | non-prefix cache composition | composition/correction research coverage | `composite.py`, capability registry | inspired_by | not assumed | not assumed | not assumed | full system: yes | only A/B correction hypotheses are testable; no system equivalence claimed |
+| Cache-Craft | query-aware cache reuse | query-related importance plus cache correction | `placeholders.py` query/attention interfaces; static selector only a project baseline | interface_only | yes | yes | no | full system: yes | StatePair lacks genuine query/attention and runtime signals |
+| KVShare | cache sharing | shared KV/state reuse across contexts | `baseline.py`, `composite.py`, registry coverage | inspired_by | not assumed | not assumed | not assumed | full system: yes | distortion under supplied A/B is measurable; sharing system is outside evaluator |
+| A³ | query-aware selection | query-conditioned importance/selection | `QueryImportanceProvider`, `query_aware_selection` | interface_only | yes | optional | no | possibly | no genuine query score is present in base StatePair |
+| FusionRAG | runtime/system fusion | runtime attention/prefill and fused execution | `fusionrag_runtime` capability | interface_only | possible | possible | no | yes | not an offline state-correction algorithm |
+| ProphetKV | query-aware selection | prediction of query-relevant KV importance | `QueryImportanceProvider`, `query_aware_selection` | interface_only | yes | optional | possibly | possibly | base StatePair has no query-conditioned signal or trained predictor |
+| QCFuse | query-conditioned fusion | query-aware cache fusion/selection; detector only tests a related mechanism | `QueryImportanceProvider`; `detector.py` mechanism probe | interface_only / detector inspired_by | yes | optional | not assumed | possibly | A/B alone cannot reproduce query-conditioned decisions |
+| CacheTune | cache/system optimization | cache policy and runtime optimization | `cachetune_runtime` capability | interface_only | not assumed | not assumed | not assumed | yes | runtime latency, I/O and cache policy are absent |
+| RelayCaching | detector/cross-layer selective repair | exact detector recompute or external-score interface projects positions across layers | `selective.py`, `detector.py` | inspired_by / mechanism_baseline | no | no | no | full system: possible | detector-position hypothesis is testable; not a full reproduction |
+| DAF | runtime/system optimization | dense batching/prefill/runtime behavior | `daf_runtime` capability | interface_only | not assumed | possibly | no | yes | no runtime trace, batching, or kernel data in StatePair |
+| KVCOMM | anchor/nearest residual | generic descriptor-conditioned residual transfer | `anchor.py` | inspired_by / mechanism_baseline | no | no | no | no | descriptor and alignment contracts are testable; not KVCOMM reproduction |
+| CacheSlide | position correction | multi-head RoPE position-correction primitive | `position.py` | inspired_by / primitive | no | no | no | no | primitive is testable; not CacheSlide reproduction |
+| AgentKVShift | shared/probed residual shift | project shared/probe residual mechanism test | `shared.py`, `probe.py` | inspired_by / mechanism_baseline | no | no | no | no | structural A/B hypotheses are directly testable; not paper reproduction |
+| KVLink | composable/trained states | learned or architecture-supported state linking | `kvlink` capability | interface_only | not required | not required | yes | possibly | requires training/architecture changes absent from StatePair evaluator |
+| KV Packet | composable/trained states | learned packetized/composable KV representation | `kv_packet` capability | interface_only | not required | not required | yes | possibly | representation training and architecture changes are absent |
+| C²KV | composable/trained states | trained composable/correctable KV states | `c2kv` capability | interface_only | not required | not required | yes | possibly | cannot infer trained composition from an A/B pair |
+| Irminsul | cache reuse research coverage | reusable-cache selection/correction coverage | registry plus `composite.py`; no paper surrogate | interface_only | unknown | unknown | unknown | likely system component | StatePair capability requirements are not asserted without a verified paper/data contract |
+| ReCache | trained cache reuse | training-based reusable state transformation | `recache` capability | interface_only | not assumed | not assumed | yes | possibly | training data/objective and model changes are absent |
+| MEPIC | runtime/system optimization | prefill/I/O/paged-cache/kernel behavior | `mepic_runtime` capability | interface_only | not assumed | possibly | no | yes | offline A/B quality cannot represent runtime optimization |
+
+Interface-only entries appear in the registry and return `CAPABILITY_MISSING`; they never emit surrogate correction metrics as if the paper had been implemented.

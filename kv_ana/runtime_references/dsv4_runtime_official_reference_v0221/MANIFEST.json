@@ -1,0 +1,51 @@
+{
+  "bundle_id": "dsv4_runtime_official_reference_v0221",
+  "purpose": "read-only comparison of pinned official DeepSeek-V4 runtime files against installed server files",
+  "baseline_match": "MISMATCH",
+  "repositories": [
+    {
+      "name": "vllm-project/vllm-ascend",
+      "url": "https://github.com/vllm-project/vllm-ascend",
+      "tag": "v0.22.1rc1",
+      "commit": "5f6faa0cb8830f667266f3b8121cd1383606f2a1"
+    },
+    {
+      "name": "vllm-project/vllm",
+      "url": "https://github.com/vllm-project/vllm",
+      "tag": "v0.22.1",
+      "commit": "0decac0d96c42b49572498019f0a0e3600f50398"
+    }
+  ],
+  "files": [
+    {
+      "id": "vllm_ascend_dsa_v1",
+      "official_path": "official/vllm-ascend/vllm_ascend/attention/dsa_v1.py",
+      "installed_path": "/data/node0_disk1/liguowei/AK-Infer-Lab/.conda/envs/ak-infer-lab-vllm-ascend0.22.1rc1/lib/python3.11/site-packages/vllm_ascend/attention/dsa_v1.py",
+      "official_sha256": "a75e2b8faaadaa29bbc86087412ee694af7f20bdbd548b12640724b9d821a871",
+      "known_server_sha256": "99903d816a1967634f9684dd098088fdeb4711c64324739a3a0b8a7b2a4df9f2",
+      "status": "MISMATCH",
+      "official_lines": 2727,
+      "official_bytes": 121566
+    },
+    {
+      "id": "vllm_ascend_deepseek_v4",
+      "official_path": "official/vllm-ascend/vllm_ascend/models/deepseek_v4.py",
+      "installed_path": "/data/node0_disk1/liguowei/AK-Infer-Lab/.conda/envs/ak-infer-lab-vllm-ascend0.22.1rc1/lib/python3.11/site-packages/vllm_ascend/models/deepseek_v4.py",
+      "official_sha256": "9398e49d7206ba5a62629409405be057318e0657e40a25cf15c43304f78d01a4",
+      "known_server_sha256": "9398e49d7206ba5a62629409405be057318e0657e40a25cf15c43304f78d01a4",
+      "status": "MATCH",
+      "official_lines": 1511,
+      "official_bytes": 62672
+    },
+    {
+      "id": "vllm_deepseek_v4_compressor",
+      "official_path": "official/vllm/vllm/models/deepseek_v4/compressor.py",
+      "installed_path": "/data/node0_disk1/vllm-0.22.1/vllm/models/deepseek_v4/compressor.py",
+      "official_sha256": "fdbf933e2078d30572c07f0e5c6f76dbc8ba53e2c2f24f0fb93a1f9adf109cd8",
+      "known_server_sha256": "fdbf933e2078d30572c07f0e5c6f76dbc8ba53e2c2f24f0fb93a1f9adf109cd8",
+      "status": "MATCH",
+      "official_lines": 380,
+      "official_bytes": 14259
+    }
+  ]
+}

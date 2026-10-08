@@ -1,0 +1,72 @@
+
+=================================== ERRORS ====================================
+_______________ ERROR collecting tests/unit/test_v41_profile.py _______________
+tests\unit\test_v41_profile.py:5: in <module>
+    from agentmon.adapters.agent_frameworks.mini_swe.profiled_model import profile_request_kwargs
+src\agentmon\adapters\agent_frameworks\mini_swe\__init__.py:4: in <module>
+    from .agent import (
+src\agentmon\adapters\agent_frameworks\mini_swe\agent.py:7: in <module>
+    from .event_sink import AdapterEventSink, get_sink, mini_swe_submitted_control_flow_payload
+src\agentmon\adapters\agent_frameworks\mini_swe\event_sink.py:12: in <module>
+    from agentmon.sampling.procfs import read_proc_stat
+src\agentmon\sampling\procfs.py:13: in <module>
+    PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
+E   AttributeError: module 'os' has no attribute 'sysconf'
+_______________ ERROR collecting tests/unit/test_p1_adapters.py _______________
+tests\unit\test_p1_adapters.py:9: in <module>
+    from agentmon.adapters.mini_swe.agent import InstrumentedAgentMixin
+src\agentmon\adapters\mini_swe\__init__.py:3: in <module>
+    from agentmon.adapters.agent_frameworks.mini_swe import *  # noqa: F403
+src\agentmon\adapters\agent_frameworks\mini_swe\__init__.py:4: in <module>
+    from .agent import (
+src\agentmon\adapters\agent_frameworks\mini_swe\agent.py:7: in <module>
+    from .event_sink import AdapterEventSink, get_sink, mini_swe_submitted_control_flow_payload
+src\agentmon\adapters\agent_frameworks\mini_swe\event_sink.py:12: in <module>
+    from agentmon.sampling.procfs import read_proc_stat
+src\agentmon\sampling\procfs.py:13: in <module>
+    PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
+E   AttributeError: module 'os' has no attribute 'sysconf'
+_____________ ERROR collecting tests/unit/test_p2_vllm_adapter.py _____________
+tests\unit\test_p2_vllm_adapter.py:11: in <module>
+    from agentmon.adapters.vllm_018.events import VllmP2EventSink
+src\agentmon\adapters\vllm_018\__init__.py:3: in <module>
+    from agentmon.adapters.inference.vllm_018 import *  # noqa: F403
+src\agentmon\adapters\inference\vllm_018\__init__.py:8: in <module>
+    from .events import VllmP2EventSink
+src\agentmon\adapters\inference\vllm_018\events.py:13: in <module>
+    from agentmon.sampling.procfs import read_proc_stat
+src\agentmon\sampling\procfs.py:13: in <module>
+    PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
+E   AttributeError: module 'os' has no attribute 'sysconf'
+___________ ERROR collecting tests/unit/test_adapter_namespaces.py ____________
+tests\unit\test_adapter_namespaces.py:6: in <module>
+    from agentmon.cli import main as agentmon_main
+src\agentmon\cli.py:15: in <module>
+    from .adapters.inference.vllm_018.importer import (
+src\agentmon\adapters\inference\vllm_018\__init__.py:8: in <module>
+    from .events import VllmP2EventSink
+src\agentmon\adapters\inference\vllm_018\events.py:13: in <module>
+    from agentmon.sampling.procfs import read_proc_stat
+src\agentmon\sampling\procfs.py:13: in <module>
+    PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
+E   AttributeError: module 'os' has no attribute 'sysconf'
+_______ ERROR collecting tests/unit/test_runtime_optimization_switch.py _______
+tests\unit\test_runtime_optimization_switch.py:5: in <module>
+    from agentmon.adapters.agent_frameworks.mini_swe.runtime_control import RuntimeControlledModel
+src\agentmon\adapters\agent_frameworks\mini_swe\__init__.py:4: in <module>
+    from .agent import (
+src\agentmon\adapters\agent_frameworks\mini_swe\agent.py:7: in <module>
+    from .event_sink import AdapterEventSink, get_sink, mini_swe_submitted_control_flow_payload
+src\agentmon\adapters\agent_frameworks\mini_swe\event_sink.py:12: in <module>
+    from agentmon.sampling.procfs import read_proc_stat
+src\agentmon\sampling\procfs.py:13: in <module>
+    PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
+E   AttributeError: module 'os' has no attribute 'sysconf'
+=========================== short test summary info ===========================
+ERROR tests/unit/test_v41_profile.py - AttributeError: module 'os' has no att...
+ERROR tests/unit/test_p1_adapters.py - AttributeError: module 'os' has no att...
+ERROR tests/unit/test_p2_vllm_adapter.py - AttributeError: module 'os' has no...
+ERROR tests/unit/test_adapter_namespaces.py - AttributeError: module 'os' has...
+ERROR tests/unit/test_runtime_optimization_switch.py - AttributeError: module...
+!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!
+5 errors in 0.38s

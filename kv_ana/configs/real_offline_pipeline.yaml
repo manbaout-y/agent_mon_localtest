@@ -1,0 +1,15 @@
+{
+  "schema_version": "real-offline-pipeline-v1",
+  "pair_count": 561,
+  "fixed_manifest": "manifests/lifemem_48_pairs.csv",
+  "historical_references": "references/historical_b1_b4.json",
+  "ranks": [1, 2, 4, 8, 16],
+  "probes": [1, 2, 4, 8],
+  "budgets": [0.01, 0.05, 0.10, 0.20],
+  "randomized_svd": {"oversample": 8, "niter": 2, "seed": 20260827},
+  "capsule_max_bytes": 45000,
+  "paper_components": {
+    "AgentKVShift": {"variant": "full_exact"},
+    "CacheSlide": {"component": "WCA", "cksim_rules": ["retire_if_similarity_gte", "retire_if_similarity_lte"]}
+  }
+}

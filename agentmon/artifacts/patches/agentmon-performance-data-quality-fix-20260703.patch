@@ -1,0 +1,563 @@
+diff --git a/scripts/agentmon_perf_summary.py b/scripts/agentmon_perf_summary.py
+index a0f258a..f4e5c19 100644
+--- a/scripts/agentmon_perf_summary.py
++++ b/scripts/agentmon_perf_summary.py
+@@ -77,6 +77,7 @@ def build_perf_summary(
+         "agent_prompt_tokens": agent.get("prompt_tokens"),
+         "agent_completion_tokens": agent.get("completion_tokens"),
+         "agent_cached_tokens": agent.get("cached_tokens"),
++        "agent_token_source": agent.get("token_source"),
+         "agent_instance_cost": agent.get("instance_cost"),
+         "p1_status": p1.get("status"),
+         "p1_agent_steps": p1.get("agent_steps"),
+@@ -87,12 +88,16 @@ def build_perf_summary(
+         "proc_status": proc.get("status"),
+         "proc_sample_count": proc.get("sample_count"),
+         "proc_agent_process_count_last": proc.get("agent_process_count_last"),
++        "proc_agent_process_count_max": proc.get("agent_process_count_max"),
++        "proc_agent_process_count_active_last": proc.get("agent_process_count_active_last"),
+         "proc_agent_peak_pss_bytes": proc.get("agent_peak_pss_bytes"),
+         "proc_agent_peak_rss_bytes": proc.get("agent_peak_rss_bytes"),
+         "proc_agent_pss_quality": proc.get("agent_pss_quality"),
+         "ascend_status": ascend.get("status"),
+         "ascend_sample_count": ascend.get("sample_count"),
+         "ascend_parser_confidence": ascend.get("parser_confidence"),
++        "ascend_hbm_quality": ascend.get("hbm_quality"),
++        "ascend_aicore_quality": ascend.get("aicore_quality"),
+         "ascend_peak_hbm_used_bytes": ascend_peak(ascend, "peak_hbm_used_bytes"),
+         "ascend_max_aicore_util_pct": ascend_peak(ascend, "max_aicore_util_pct"),
+         "vllm_status": vllm.get("status"),
+diff --git a/src/agentmon/reporting/report.py b/src/agentmon/reporting/report.py
+index 2e62de8..010d8be 100644
+--- a/src/agentmon/reporting/report.py
++++ b/src/agentmon/reporting/report.py
+@@ -210,10 +210,61 @@ def ns_to_s(value: Any) -> float | None:
+ 
+ 
+ def summarize_trajectory_events(events: list[dict[str, Any]]) -> dict[str, Any]:
++    summary: dict[str, Any] = {"status": "missing"}
+     for event in reversed(events):
+         if event.get("source") == "trajectory" and event.get("event_type") == "sample":
+-            return event.get("payload", {}).get("summary", {})
+-    return {"status": "missing"}
++            payload_summary = event.get("payload", {}).get("summary", {})
++            summary = dict(payload_summary) if isinstance(payload_summary, dict) else {"status": "partial"}
++            break
++
++    p1_usage = summarize_p1_model_usage(events)
++    if p1_usage:
++        filled = False
++        for target_key, usage_key in (
++            ("prompt_tokens", "prompt_tokens"),
++            ("completion_tokens", "completion_tokens"),
++            ("cached_tokens", "cached_tokens"),
++        ):
++            if summary.get(target_key) is None and p1_usage.get(usage_key) is not None:
++                summary[target_key] = p1_usage[usage_key]
++                filled = True
++        if filled:
++            summary["token_source"] = "p1_model_request"
++    elif any(summary.get(key) is not None for key in ("prompt_tokens", "completion_tokens", "cached_tokens")):
++        summary.setdefault("token_source", "trajectory")
++    return summary
++
++
++def summarize_p1_model_usage(events: list[dict[str, Any]]) -> dict[str, int] | None:
++    totals = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
++    saw_usage = False
++    for event in events:
++        if event.get("source") != "mini_swe":
++            continue
++        if event.get("event_type") not in {"model_request.end", "model_request_end"}:
++            continue
++        payload = event.get("payload", {})
++        if not isinstance(payload, dict) or payload.get("span_type") not in {None, "model_request"}:
++            continue
++        usage = payload.get("usage")
++        if not isinstance(usage, dict):
++            continue
++        prompt = integer_or_none(usage.get("prompt_tokens"))
++        completion = integer_or_none(usage.get("completion_tokens"))
++        cached = integer_or_none(usage.get("cached_tokens"))
++        details = usage.get("prompt_tokens_details")
++        if cached is None and isinstance(details, dict):
++            cached = integer_or_none(details.get("cached_tokens"))
++        if prompt is not None:
++            totals["prompt_tokens"] += prompt
++            saw_usage = True
++        if completion is not None:
++            totals["completion_tokens"] += completion
++            saw_usage = True
++        if cached is not None:
++            totals["cached_tokens"] += cached
++            saw_usage = True
++    return totals if saw_usage else None
+ 
+ 
+ def summarize_p1_spans(
+@@ -453,16 +504,24 @@ def summarize_proc_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+         return {"status": "missing"}
+     peak_agent_pss = 0
+     peak_agent_rss = 0
++    agent_process_count_max = 0
+     last_agent: dict[str, Any] = {}
++    last_active_agent: dict[str, Any] = {}
+     for event in samples:
+         aggregate = event.get("payload", {}).get("aggregate", {}).get("agent", {})
+         peak_agent_pss = max(peak_agent_pss, int(aggregate.get("pss_bytes") or 0))
+         peak_agent_rss = max(peak_agent_rss, int(aggregate.get("rss_bytes") or 0))
++        process_count = int(aggregate.get("process_count") or 0)
++        agent_process_count_max = max(agent_process_count_max, process_count)
++        if process_count > 0:
++            last_active_agent = aggregate
+         last_agent = aggregate
+     return {
+         "status": "complete",
+         "sample_count": len(samples),
+         "agent_process_count_last": last_agent.get("process_count"),
++        "agent_process_count_max": agent_process_count_max or None,
++        "agent_process_count_active_last": last_active_agent.get("process_count"),
+         "agent_peak_pss_bytes": peak_agent_pss or None,
+         "agent_peak_rss_bytes": peak_agent_rss or None,
+         "agent_pss_quality": last_agent.get("pss_quality"),
+@@ -895,6 +954,8 @@ def summarize_ascend_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+         return {"status": "missing" if not caps else caps[-1].get("payload", {}).get("status", "missing")}
+     devices: dict[str, dict[str, Any]] = {}
+     parser_confidence = 0.0
++    hbm_sample_count = 0
++    aicore_sample_count = 0
+     for event in samples:
+         payload = event.get("payload", {})
+         parser_confidence = max(parser_confidence, float(payload.get("parser_confidence") or 0.0))
+@@ -904,17 +965,36 @@ def summarize_ascend_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+             device_id = str(device.get("device_id", index))
+             row = devices.setdefault(device_id, {"peak_hbm_used_bytes": None, "max_aicore_util_pct": None})
+             if isinstance(device.get("hbm_used_bytes"), int):
++                hbm_sample_count += 1
+                 row["peak_hbm_used_bytes"] = max(row["peak_hbm_used_bytes"] or 0, device["hbm_used_bytes"])
+             if isinstance(device.get("aicore_util_pct"), (int, float)):
++                aicore_sample_count += 1
+                 row["max_aicore_util_pct"] = max(row["max_aicore_util_pct"] or 0.0, float(device["aicore_util_pct"]))
++    hbm_quality = "sampled" if hbm_sample_count else "unavailable"
++    aicore_quality = "sampled" if aicore_sample_count else "unavailable"
++    status = "complete" if devices and hbm_sample_count and aicore_sample_count else "partial"
+     return {
+-        "status": "complete" if devices else "partial",
++        "status": status,
+         "sample_count": len(samples),
+         "parser_confidence": parser_confidence,
++        "hbm_quality": hbm_quality,
++        "aicore_quality": aicore_quality,
++        "hbm_sample_count": hbm_sample_count,
++        "aicore_sample_count": aicore_sample_count,
+         "devices": devices,
+     }
+ 
+ 
++def integer_or_none(value: Any) -> int | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, int):
++        return value
++    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
++        return int(value)
++    return None
++
++
+ def summarize_errors(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+     errors = [
+         event
+diff --git a/src/agentmon/reporting/summary.py b/src/agentmon/reporting/summary.py
+index b8fb2c0..575213b 100644
+--- a/src/agentmon/reporting/summary.py
++++ b/src/agentmon/reporting/summary.py
+@@ -37,6 +37,7 @@ SUMMARY_FIELDS = [
+     "prompt_tokens",
+     "generation_tokens",
+     "cached_tokens",
++    "token_source",
+     "instance_cost",
+     "model_latency.total",
+     "model_latency.mean",
+@@ -104,6 +105,8 @@ SUMMARY_FIELDS = [
+     "npu_max_aicore_util_pct",
+     "npu_parser_confidence",
+     "npu_quality",
++    "npu_hbm_quality",
++    "npu_aicore_quality",
+ ]
+ 
+ 
+@@ -242,6 +245,7 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "prompt_tokens": numeric_or_none(agent.get("prompt_tokens")),
+         "generation_tokens": numeric_or_none(agent.get("completion_tokens")),
+         "cached_tokens": numeric_or_none(agent.get("cached_tokens")),
++        "token_source": agent.get("token_source"),
+         "instance_cost": numeric_or_none(agent.get("instance_cost")),
+         "model_latency": latency_stats(model_durations),
+         "tool_latency": latency_stats(tool_durations),
+@@ -291,6 +295,8 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "npu_max_aicore_util_pct": npu_max_aicore,
+         "npu_parser_confidence": numeric_or_none(ascend.get("parser_confidence")),
+         "npu_quality": ascend.get("status"),
++        "npu_hbm_quality": ascend.get("hbm_quality"),
++        "npu_aicore_quality": ascend.get("aicore_quality"),
+     }
+     summary["data_integrity_pass"] = data_integrity_pass(summary)
+     summary["task_success"] = (
+diff --git a/src/agentmon/sampling/ascend_smi.py b/src/agentmon/sampling/ascend_smi.py
+index 202cfce..04a307f 100644
+--- a/src/agentmon/sampling/ascend_smi.py
++++ b/src/agentmon/sampling/ascend_smi.py
+@@ -34,7 +34,7 @@ class UsageKeyValueParser:
+     name = "usage_key_value"
+ 
+     def detect(self, text: str) -> float:
+-        keys = ["Memory Capacity", "Memory Usage Rate", "Aicore Usage Rate", "HBM"]
++        keys = ["Memory Capacity", "Memory Usage", "Aicore Usage Rate", "HBM"]
+         return min(1.0, sum(1 for key in keys if key.lower() in text.lower()) / 2.0)
+ 
+     def parse(self, text: str) -> ParseResult:
+@@ -62,21 +62,30 @@ class Table910Parser:
+ 
+     def parse(self, text: str) -> ParseResult:
+         devices: list[dict[str, object]] = []
++        current_npu_id: str | None = None
+         for line in text.splitlines():
+             if "|" not in line:
+                 continue
+             cells = [cell.strip() for cell in line.strip("|").split("|")]
+-            if not cells or not cells[0].isdigit():
++            if not cells:
+                 continue
+-            device: dict[str, object] = {"device_id": cells[0]}
+-            joined = " ".join(cells)
+-            util = re.search(r"(\d+(?:\.\d+)?)\s*%", joined)
+-            if util:
+-                device["aicore_util_pct"] = float(util.group(1))
+-            mem = re.search(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*(?:MB|MiB|GB|GiB)?", joined, re.I)
+-            if mem:
+-                device["hbm_used_bytes"] = int(float(mem.group(1)) * 1024 * 1024)
+-                device["hbm_total_bytes"] = int(float(mem.group(2)) * 1024 * 1024)
++            npu_match = re.match(r"^(\d+)(?:\s+\S+)?$", cells[0])
++            if npu_match and len(cells) >= 3 and not cells[0].isdigit():
++                current_npu_id = npu_match.group(1)
++                continue
++            if not cells[0].isdigit():
++                continue
++
++            metrics_cell = " ".join(cells[2:]) if len(cells) >= 3 else " ".join(cells)
++            device: dict[str, object] = {"device_id": current_npu_id or cells[0], "chip_id": cells[0]}
++            util = parse_aicore_util(metrics_cell)
++            if util is not None:
++                device["aicore_util_pct"] = util
++            hbm = parse_last_memory_ratio(metrics_cell)
++            if hbm is not None:
++                used_mib, total_mib = hbm
++                device["hbm_used_bytes"] = int(used_mib * 1024 * 1024)
++                device["hbm_total_bytes"] = int(total_mib * 1024 * 1024)
+             devices.append(device)
+         return ParseResult(self.name, self.detect(text), devices, {})
+ 
+@@ -219,10 +228,15 @@ def normalize_key(key: str) -> str | None:
+     lowered = key.lower()
+     mapping = {
+         "memory capacity": "hbm_total_bytes",
++        "memory-capacity": "hbm_total_bytes",
+         "hbm total": "hbm_total_bytes",
+-        "memory usage": "hbm_used_bytes",
++        "hbm-total": "hbm_total_bytes",
++        "hbm usage": "hbm_used_bytes",
++        "hbm-usage": "hbm_used_bytes",
+         "memory used": "hbm_used_bytes",
++        "memory-used": "hbm_used_bytes",
+         "aicore usage rate": "aicore_util_pct",
++        "aicore-usage-rate": "aicore_util_pct",
+         "ai core": "aicore_util_pct",
+         "aicpu usage rate": "aicpu_util_pct",
+         "temperature": "temperature_c",
+@@ -236,6 +250,8 @@ def normalize_key(key: str) -> str | None:
+         return "hbm_total_bytes"
+     if "内存" in key and ("用" in key or "已" in key):
+         return "hbm_used_bytes"
++    if "memory usage" in lowered and "rate" not in lowered:
++        return "hbm_used_bytes"
+     if "温度" in key:
+         return "temperature_c"
+     if "功率" in key:
+@@ -264,3 +280,26 @@ def parse_number_with_unit(value: str) -> object:
+     if "c" in lowered or "℃" in value:
+         return number
+     return int(number) if number.is_integer() else number
++
++
++def parse_aicore_util(text: str) -> float | None:
++    explicit = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
++    if explicit:
++        return float(explicit.group(1))
++    first_ratio = re.search(r"\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?", text)
++    prefix = text[: first_ratio.start()] if first_ratio else text
++    values = re.findall(r"\d+(?:\.\d+)?", prefix)
++    if not values:
++        return None
++    return float(values[0])
++
++
++def parse_last_memory_ratio(text: str) -> tuple[float, float] | None:
++    ratios = [
++        (float(match.group(1)), float(match.group(2)))
++        for match in re.finditer(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*(?:MB|MiB|GB|GiB)?", text, re.I)
++    ]
++    ratios = [(used, total) for used, total in ratios if total > 0]
++    if not ratios:
++        return None
++    return ratios[-1]
+diff --git a/tests/unit/test_ascend_smi.py b/tests/unit/test_ascend_smi.py
+index 0110121..5ea1acd 100644
+--- a/tests/unit/test_ascend_smi.py
++++ b/tests/unit/test_ascend_smi.py
+@@ -21,3 +21,38 @@ Power(W) : 310
+         self.assertEqual(device["hbm_used_bytes"], 12345 * 1024 * 1024)
+         self.assertEqual(device["aicore_util_pct"], 76)
+         self.assertEqual(device["temperature_c"], 42)
++
++    def test_table_parser_uses_hbm_ratio_not_hugepages_zero_ratio(self) -> None:
++        text = """
+++--------------------------------------------------------------------------------+
++| NPU     Name       | Health | Power(W) Temp(C) Hugepages-Usage(page)           |
++| Chip    Device     | Bus-Id | AICore(%) Memory-Usage(MB) HBM-Usage(MB)        |
+++--------------------------------------------------------------------------------+
++| 0       910B       | OK     | 310      42      0 / 0                          |
++| 0                 | 0000:00| 76       0 / 0            12345 / 65536         |
+++--------------------------------------------------------------------------------+
++""".strip()
++
++        parsed = parse_npu_smi_text(text)
++
++        self.assertEqual(parsed.parser, "table_910")
++        device = parsed.devices[0]
++        self.assertEqual(device["device_id"], "0")
++        self.assertEqual(device["chip_id"], "0")
++        self.assertEqual(device["hbm_total_bytes"], 65536 * 1024 * 1024)
++        self.assertEqual(device["hbm_used_bytes"], 12345 * 1024 * 1024)
++        self.assertEqual(device["aicore_util_pct"], 76)
++
++    def test_usage_rate_percent_is_not_reported_as_hbm_bytes(self) -> None:
++        text = """
++Memory Capacity(MB) : 65536
++Memory Usage Rate(%) : 0
++Aicore Usage Rate(%) : 0
++""".strip()
++
++        parsed = parse_npu_smi_text(text)
++
++        device = parsed.devices[0]
++        self.assertEqual(device["hbm_total_bytes"], 65536 * 1024 * 1024)
++        self.assertNotIn("hbm_used_bytes", device)
++        self.assertEqual(device["aicore_util_pct"], 0)
+diff --git a/tests/unit/test_perf_summary.py b/tests/unit/test_perf_summary.py
+index 94203f5..b853c29 100644
+--- a/tests/unit/test_perf_summary.py
++++ b/tests/unit/test_perf_summary.py
+@@ -30,6 +30,9 @@ class PerfSummaryTests(unittest.TestCase):
+                     "proc": {
+                         "status": "complete",
+                         "sample_count": 3,
++                        "agent_process_count_last": 0,
++                        "agent_process_count_max": 2,
++                        "agent_process_count_active_last": 1,
+                         "agent_peak_pss_bytes": 123,
+                         "agent_peak_rss_bytes": 456,
+                         "agent_pss_quality": "exact",
+@@ -38,6 +41,8 @@ class PerfSummaryTests(unittest.TestCase):
+                         "status": "complete",
+                         "sample_count": 2,
+                         "parser_confidence": 0.9,
++                        "hbm_quality": "sampled",
++                        "aicore_quality": "sampled",
+                         "devices": {
+                             "0": {"peak_hbm_used_bytes": 1024, "max_aicore_util_pct": 87.5},
+                             "1": {"peak_hbm_used_bytes": 2048, "max_aicore_util_pct": 66.0},
+@@ -59,8 +64,13 @@ class PerfSummaryTests(unittest.TestCase):
+ 
+         self.assertEqual(summary["proc_agent_peak_pss_bytes"], 123)
+         self.assertEqual(summary["proc_agent_peak_rss_bytes"], 456)
++        self.assertEqual(summary["proc_agent_process_count_last"], 0)
++        self.assertEqual(summary["proc_agent_process_count_max"], 2)
++        self.assertEqual(summary["proc_agent_process_count_active_last"], 1)
+         self.assertEqual(summary["ascend_peak_hbm_used_bytes"], 2048)
+         self.assertEqual(summary["ascend_max_aicore_util_pct"], 87.5)
++        self.assertEqual(summary["ascend_hbm_quality"], "sampled")
++        self.assertEqual(summary["ascend_aicore_quality"], "sampled")
+         self.assertIsNone(summary["kv_cache_hit_rate"])
+         self.assertIn("proc_agent_peak_pss_bytes | 123", table)
+         self.assertIn("ascend_peak_hbm_used_bytes | 2048", table)
+diff --git a/tests/unit/test_report_p1.py b/tests/unit/test_report_p1.py
+index 1360f31..95e5965 100644
+--- a/tests/unit/test_report_p1.py
++++ b/tests/unit/test_report_p1.py
+@@ -93,3 +93,115 @@ class P1ReportTests(unittest.TestCase):
+         self.assertEqual(event_log["sqlite_p0_count"], 1)
+         self.assertEqual(event_log["p0_jsonl_sqlite_difference"], 0)
+         self.assertFalse(event_log["event_count_mismatch"])
++
++    def test_agent_summary_falls_back_to_p1_model_request_usage(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(json.dumps({"run_id": "r", "status": "success"}), encoding="utf-8")
++            events = [
++                {
++                    "event_id": "1",
++                    "run_id": "r",
++                    "source": "trajectory",
++                    "event_type": "sample",
++                    "wall_time_ns": 1,
++                    "monotonic_time_ns": 1,
++                    "quality": "exact",
++                    "payload": {"summary": {"status": "complete", "prompt_tokens": None, "completion_tokens": None}},
++                },
++                {
++                    "event_id": "2",
++                    "run_id": "r",
++                    "source": "mini_swe",
++                    "event_type": "model_request.end",
++                    "wall_time_ns": 2,
++                    "monotonic_time_ns": 2,
++                    "quality": "exact",
++                    "payload": {
++                        "span_id": "model-1",
++                        "span_type": "model_request",
++                        "status": "success",
++                        "usage": {
++                            "prompt_tokens": 10,
++                            "completion_tokens": 3,
++                            "prompt_tokens_details": {"cached_tokens": 2},
++                        },
++                    },
++                },
++            ]
++            (run_dir / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
++
++            report = build_report(run_dir)
++
++        self.assertEqual(report["agent"]["prompt_tokens"], 10)
++        self.assertEqual(report["agent"]["completion_tokens"], 3)
++        self.assertEqual(report["agent"]["cached_tokens"], 2)
++        self.assertEqual(report["agent"]["token_source"], "p1_model_request")
++
++    def test_proc_summary_keeps_last_max_and_active_last_process_counts(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(json.dumps({"run_id": "r", "status": "success"}), encoding="utf-8")
++            events = [
++                proc_sample("1", process_count=1, pss=100, rss=200),
++                proc_sample("2", process_count=3, pss=300, rss=400),
++                proc_sample("3", process_count=0, pss=0, rss=0),
++            ]
++            (run_dir / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
++
++            report = build_report(run_dir)
++
++        self.assertEqual(report["proc"]["agent_process_count_last"], 0)
++        self.assertEqual(report["proc"]["agent_process_count_max"], 3)
++        self.assertEqual(report["proc"]["agent_process_count_active_last"], 3)
++        self.assertEqual(report["proc"]["agent_peak_pss_bytes"], 300)
++
++    def test_ascend_summary_marks_unparsed_metrics_partial_not_zero_complete(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(json.dumps({"run_id": "r", "status": "success"}), encoding="utf-8")
++            event = {
++                "event_id": "1",
++                "run_id": "r",
++                "source": "ascend",
++                "event_type": "sample",
++                "wall_time_ns": 1,
++                "monotonic_time_ns": 1,
++                "quality": "sampled",
++                "payload": {
++                    "status": "supported",
++                    "parser_confidence": 0.6,
++                    "devices": [{"device_id": "0"}],
++                },
++            }
++            (run_dir / "events.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
++
++            report = build_report(run_dir)
++
++        self.assertEqual(report["ascend"]["status"], "partial")
++        self.assertEqual(report["ascend"]["hbm_quality"], "unavailable")
++        self.assertEqual(report["ascend"]["aicore_quality"], "unavailable")
++        self.assertIsNone(report["ascend"]["devices"]["0"]["peak_hbm_used_bytes"])
++        self.assertIsNone(report["ascend"]["devices"]["0"]["max_aicore_util_pct"])
++
++
++def proc_sample(event_id: str, *, process_count: int, pss: int, rss: int) -> dict:
++    return {
++        "event_id": event_id,
++        "run_id": "r",
++        "source": "proc",
++        "event_type": "sample",
++        "wall_time_ns": int(event_id),
++        "monotonic_time_ns": int(event_id),
++        "quality": "sampled",
++        "payload": {
++            "aggregate": {
++                "agent": {
++                    "process_count": process_count,
++                    "pss_bytes": pss,
++                    "rss_bytes": rss,
++                    "pss_quality": "exact",
++                }
++            }
++        },
++    }
+diff --git a/tests/unit/test_summary.py b/tests/unit/test_summary.py
+index 416ca28..4960a49 100644
+--- a/tests/unit/test_summary.py
++++ b/tests/unit/test_summary.py
+@@ -30,6 +30,9 @@ class SummaryTests(unittest.TestCase):
+         self.assertEqual(summary["prefix_cache_hit_rate_quality"], "disabled")
+         self.assertEqual(summary["npu_peak_hbm_bytes"], 123)
+         self.assertEqual(summary["npu_max_aicore_util_pct"], 80.0)
++        self.assertEqual(summary["npu_hbm_quality"], "sampled")
++        self.assertEqual(summary["npu_aicore_quality"], "sampled")
++        self.assertEqual(summary["token_source"], "trajectory")
+         self.assertEqual(summary["strict_failures"], [])
+ 
+     def test_failed_run_and_integrity_issues_are_strict_failures(self) -> None:
+@@ -60,6 +63,8 @@ class SummaryTests(unittest.TestCase):
+         report["ascend"] = {
+             "status": "partial",
+             "parser_confidence": None,
++            "hbm_quality": "unavailable",
++            "aicore_quality": "unavailable",
+             "devices": {"0": {"peak_hbm_used_bytes": None, "max_aicore_util_pct": None}},
+         }
+ 
+@@ -69,6 +74,8 @@ class SummaryTests(unittest.TestCase):
+         self.assertIsNone(summary["npu_max_aicore_util_pct"])
+         self.assertIsNone(summary["npu_parser_confidence"])
+         self.assertEqual(summary["npu_quality"], "partial")
++        self.assertEqual(summary["npu_hbm_quality"], "unavailable")
++        self.assertEqual(summary["npu_aicore_quality"], "unavailable")
+ 
+     def test_aggregate_uses_percentiles_and_coverage(self) -> None:
+         reports = [
+@@ -206,6 +213,7 @@ def make_report(
+             "prompt_tokens": prompt_tokens,
+             "completion_tokens": generation_tokens,
+             "cached_tokens": 7,
++            "token_source": "trajectory" if prompt_tokens is not None or generation_tokens is not None else None,
+             "instance_cost": 0.12,
+         },
+         "event_log": {
+@@ -250,6 +258,8 @@ def make_report(
+         "ascend": {
+             "status": "complete",
+             "parser_confidence": 0.9,
++            "hbm_quality": "sampled",
++            "aicore_quality": "sampled",
+             "devices": {"0": {"peak_hbm_used_bytes": 123, "max_aicore_util_pct": 80.0}},
+         },
+     }

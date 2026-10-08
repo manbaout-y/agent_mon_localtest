@@ -1,0 +1,1660 @@
+diff --git a/README.md b/README.md
+index c1e1bae..2c4b69d 100644
+--- a/README.md
++++ b/README.md
+@@ -391,6 +391,7 @@ Each run writes under the absolute output root configured in
+   metrics.sqlite3
+   raw/
+   report.json
++  summary.json
+   report.txt
+   report.csv
+   logs/
+@@ -415,7 +416,9 @@ subcommand:
+ ```bash
+ "$AGENTMON_PY" -m agentmon live --config "$AGENTMON_REPO/examples/config.target.toml" <run-id> --once
+ "$AGENTMON_PY" -m agentmon report --config "$AGENTMON_REPO/examples/config.target.toml" <run-id>
++"$AGENTMON_PY" -m agentmon summary --config "$AGENTMON_REPO/examples/config.target.toml" <run-id> --format table
+ "$AGENTMON_PY" -m agentmon export --config "$AGENTMON_REPO/examples/config.target.toml" <run-id> --format json
++"$AGENTMON_PY" -m agentmon aggregate --config "$AGENTMON_REPO/examples/config.target.toml" --runs-root "$AGENTMON_HOME/runs" --format table
+ "$AGENTMON_PY" -m agentmon compare --config "$AGENTMON_REPO/examples/config.target.toml" <run-id-a> <run-id-b>
+ ```
+ 
+@@ -423,6 +426,76 @@ For P1 runs, `live` reads `events.jsonl` on refresh and shows a compact P1
+ summary: completed step/model/tool span counts, open span count, and the most
+ recent span status. It is still a simple text view, not a full trace UI.
+ 
++`summary` prints a compact single-run summary without dumping long vLLM
++`counter_deltas` into the default table:
++
++```bash
++"$AGENTMON_PY" -m agentmon summary --config "$AGENTMON_REPO/examples/config.target.toml" <run-id> --format table
++"$AGENTMON_PY" -m agentmon summary --config "$AGENTMON_REPO/examples/config.target.toml" <run-id> --format json
++"$AGENTMON_PY" -m agentmon summary --config "$AGENTMON_REPO/examples/config.target.toml" <run-id> --format csv
++```
++
++`aggregate` summarizes many runs from explicit ids or a run root:
++
++```bash
++"$AGENTMON_PY" -m agentmon aggregate --config "$AGENTMON_REPO/examples/config.target.toml" <run-id-a> <run-id-b> --format json
++"$AGENTMON_PY" -m agentmon aggregate --config "$AGENTMON_REPO/examples/config.target.toml" --runs-root "$AGENTMON_HOME/runs" --label calculator-smoke --format csv
++"$AGENTMON_PY" -m agentmon aggregate --config "$AGENTMON_REPO/examples/config.target.toml" --runs-root "$AGENTMON_HOME/runs" --status success --started-after 2026-07-02T00:00:00Z
++```
++
++Both commands support `--strict`. In strict mode the CLI exits non-zero if an
++included run failed or has invalid JSON, duplicate event ids, open spans,
++negative span durations, or a P0 JSONL/SQLite mismatch. Non-strict mode only
++prints the result.
++
++Smoke checks should use the compact summary fields instead of rejecting any
++event whose type ends with `.error`. A successful P1 smoke run should require
++the wrapper/test return codes to be zero, `run_status=success`,
++`agent_exit_status=Submitted`/`submitted`, and `data_integrity_pass=true`.
++Nonzero shell commands are reported separately as `command_nonzero_count`; they
++do not automatically mean the whole coding task failed. Submitted mini-SWE
++control flow is reported separately as `submission_control_flow_count`.
++
++```bash
++SMOKE_RC=0 FINAL_TEST_RC=0 \
++PYTHONPATH="$AGENTMON_REPO/src" \
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_p1_smoke_check.py" \
++  "$AGENTMON_HOME/runs/<run-id>"
++```
++
++Each report generation also writes `summary.json` next to `report.json`:
++
++```json
++{
++  "schema_version": "1.0",
++  "summary_type": "agentmon.run_summary",
++  "run_id": "20260702-...",
++  "task_success": true,
++  "data_integrity_pass": true,
++  "run_status": "success",
++  "agent_exit_status": "submitted",
++  "duration_seconds": 12.3,
++  "agent_steps": 4,
++  "model_requests": 5,
++  "tool_calls": 3,
++  "instrumentation_error_count": 0,
++  "command_nonzero_count": 2,
++  "expected_test_failure_count": null,
++  "submission_control_flow_count": 1,
++  "model_latency": {"total": 3.2, "mean": 0.64, "p50": 0.5, "p95": 1.1, "max": 1.2, "sample_count": 5},
++  "tool_latency": {"total": 1.0, "mean": 0.33, "p50": 0.2, "p95": 0.7, "max": 0.8, "sample_count": 3},
++  "prefix_cache_status": "disabled",
++  "prefix_cache_hit_rate": null,
++  "prefix_cache_hit_rate_quality": "disabled",
++  "strict_failures": []
++}
++```
++
++When prefix caching is disabled, hit rate is reported as `null` / `N/A`; it is
++not printed as `0%` and is not included in aggregate hit-rate averages. Missing
++metrics remain `null` in JSON and `N/A` in table/CSV output; aggregate sections
++include sample counts and coverage where applicable.
++
+ ## P0 Limits
+ 
+ P0 can show process CPU/RSS/PSS/I/O, host load and PSI, NPU utilization and
+diff --git a/scripts/agentmon_p1_smoke_check.py b/scripts/agentmon_p1_smoke_check.py
+new file mode 100644
+index 0000000..72c0d8c
+--- /dev/null
++++ b/scripts/agentmon_p1_smoke_check.py
+@@ -0,0 +1,109 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import json
++import os
++from pathlib import Path
++import sys
++from typing import Any, Sequence
++
++from agentmon.reporting.report import build_report
++from agentmon.reporting.summary import build_run_summary
++
++
++REQUIRED_SUMMARY_FIELDS = {
++    "task_success",
++    "data_integrity_pass",
++    "instrumentation_error_count",
++    "command_nonzero_count",
++    "expected_test_failure_count",
++    "submission_control_flow_count",
++}
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    args = build_parser().parse_args(argv)
++    try:
++        summary = load_summary(Path(args.run_dir))
++        smoke_rc = rc_value(args.smoke_rc, "SMOKE_RC")
++        final_test_rc = rc_value(args.final_test_rc, "FINAL_TEST_RC")
++        result = build_smoke_result(summary, smoke_rc=smoke_rc, final_test_rc=final_test_rc)
++    except Exception as exc:
++        print(f"agentmon p1 smoke check error: {exc}", file=sys.stderr)
++        return 2
++    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
++    return 0 if args.no_strict or result["task_success"] else 1
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Check an AgentMon P1 smoke run from summary/report JSON")
++    parser.add_argument("run_dir", help="AgentMon run directory containing summary.json or report.json")
++    parser.add_argument("--smoke-rc", type=int, help="wrapper smoke command return code; defaults to SMOKE_RC")
++    parser.add_argument("--final-test-rc", type=int, help="final test command return code; defaults to FINAL_TEST_RC")
++    parser.add_argument("--no-strict", action="store_true", help="always exit 0 after printing JSON")
++    return parser
++
++
++def load_summary(run_dir: Path) -> dict[str, Any]:
++    summary_path = run_dir / "summary.json"
++    if summary_path.exists():
++        summary = json.loads(summary_path.read_text(encoding="utf-8"))
++        if REQUIRED_SUMMARY_FIELDS.issubset(summary):
++            return summary
++    report_path = run_dir / "report.json"
++    if report_path.exists():
++        return build_run_summary(json.loads(report_path.read_text(encoding="utf-8")))
++    return build_run_summary(build_report(run_dir))
++
++
++def build_smoke_result(summary: dict[str, Any], *, smoke_rc: int | None, final_test_rc: int | None) -> dict[str, Any]:
++    issues: list[str] = []
++    if smoke_rc != 0:
++        issues.append("smoke_rc")
++    if final_test_rc != 0:
++        issues.append("final_test_rc")
++    if summary.get("run_status") != "success":
++        issues.append("run_status")
++    if str(summary.get("agent_exit_status")).lower() != "submitted":
++        issues.append("agent_exit_status")
++    if summary.get("data_integrity_pass") is not True:
++        issues.append("data_integrity")
++
++    task_success = not issues
++    return {
++        "schema_version": "1.0",
++        "smoke_check_type": "agentmon.p1_smoke_check",
++        "run_id": summary.get("run_id"),
++        "task_success": task_success,
++        "data_integrity_pass": summary.get("data_integrity_pass"),
++        "instrumentation_error_count": summary.get("instrumentation_error_count"),
++        "command_nonzero_count": summary.get("command_nonzero_count"),
++        "expected_test_failure_count": summary.get("expected_test_failure_count"),
++        "submission_control_flow_count": summary.get("submission_control_flow_count"),
++        "criteria": {
++            "smoke_rc": smoke_rc,
++            "final_test_rc": final_test_rc,
++            "run_status": summary.get("run_status"),
++            "agent_exit_status": summary.get("agent_exit_status"),
++            "invalid_json_lines": summary.get("invalid_json_lines"),
++            "duplicate_event_ids": summary.get("duplicate_event_ids"),
++            "open_spans": summary.get("open_spans"),
++            "negative_durations": summary.get("negative_durations"),
++            "event_count_mismatch": summary.get("event_count_mismatch"),
++        },
++        "issues": issues,
++    }
++
++
++def rc_value(value: int | None, env_name: str) -> int | None:
++    if value is not None:
++        return value
++    raw = os.environ.get(env_name)
++    if raw in {None, ""}:
++        return None
++    return int(raw)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/src/agentmon/adapters/mini_swe/agent.py b/src/agentmon/adapters/mini_swe/agent.py
+index 211e296..82b93ef 100644
+--- a/src/agentmon/adapters/mini_swe/agent.py
++++ b/src/agentmon/adapters/mini_swe/agent.py
+@@ -2,7 +2,7 @@ from __future__ import annotations
+ 
+ from typing import Any, TypeVar
+ 
+-from .event_sink import AdapterEventSink, get_sink
++from .event_sink import AdapterEventSink, get_sink, mini_swe_submitted_control_flow_payload
+ from .ids import new_step_id
+ 
+ 
+@@ -49,7 +49,17 @@ class InstrumentedAgentMixin:
+                 attributes={"step_id": step_id, "n_calls": _safe_getattr(self, "n_calls")},
+                 source="mini_swe",
+             ) as span:
+-                result = super().step(*args, **kwargs)  # type: ignore[misc]
++                try:
++                    result = super().step(*args, **kwargs)  # type: ignore[misc]
++                except BaseException as exc:
++                    control_flow_payload = mini_swe_submitted_control_flow_payload(exc)
++                    if control_flow_payload is not None:
++                        span["end_payload"] = {
++                            "step_id": step_id,
++                            "n_calls": _safe_getattr(self, "n_calls"),
++                            **control_flow_payload,
++                        }
++                    raise
+                 span["end_payload"] = {"step_id": step_id, "n_calls": _safe_getattr(self, "n_calls")}
+         finally:
+             self.agentmon_current_step_id = previous_step_id
+diff --git a/src/agentmon/adapters/mini_swe/event_sink.py b/src/agentmon/adapters/mini_swe/event_sink.py
+index 0cbfcdc..165feee 100644
+--- a/src/agentmon/adapters/mini_swe/event_sink.py
++++ b/src/agentmon/adapters/mini_swe/event_sink.py
+@@ -123,8 +123,13 @@ class AdapterEventSink:
+         try:
+             yield state
+         except BaseException as exc:
+-            status = "error"
+-            error_payload = exception_fingerprint(exc)
++            control_flow_payload = mini_swe_submitted_control_flow_payload(exc)
++            if control_flow_payload is not None:
++                status = "submitted"
++                error_payload = control_flow_payload
++            else:
++                status = "error"
++                error_payload = exception_fingerprint(exc)
+             raise
+         finally:
+             self.context = self.context.child(current_span_id=previous_span_id)
+@@ -194,3 +199,31 @@ def span_finish_event_type(span_type: str, status: str) -> str:
+     if status == "error" and span_type in {"agent_step", "model_request", "tool_call"}:
+         return f"{span_type}.error"
+     return f"{span_type}.end"
++
++
++def mini_swe_submitted_control_flow_payload(exc: BaseException) -> dict[str, Any] | None:
++    """Identify mini-SWE's Submitted control-flow exception without importing mini-SWE."""
++    name = type(exc).__name__
++    exit_status = submitted_exit_status(exc)
++    if name != "Submitted" and str(exit_status).lower() != "submitted":
++        return None
++    return {
++        "status": "submitted",
++        "terminal_reason": "submitted",
++        "exit_status": exit_status or "Submitted",
++        "submission_control_flow": True,
++        "control_flow_exception": name,
++    }
++
++
++def submitted_exit_status(exc: BaseException) -> Any:
++    direct = getattr(exc, "exit_status", None)
++    if direct is not None:
++        return direct
++    for message in getattr(exc, "messages", ()) or ():
++        if not isinstance(message, dict):
++            continue
++        extra = message.get("extra")
++        if isinstance(extra, dict) and extra.get("exit_status") is not None:
++            return extra.get("exit_status")
++    return None
+diff --git a/src/agentmon/cli.py b/src/agentmon/cli.py
+index 178e675..585f537 100644
+--- a/src/agentmon/cli.py
++++ b/src/agentmon/cli.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++from datetime import datetime, timezone
+ import json
+ import time
+ from pathlib import Path
+@@ -11,8 +12,9 @@ from . import __version__
+ from .config import ConfigError, load_config
+ from .doctor import run_doctor
+ from .events import Event
+-from .paths import find_run_dir
++from .paths import find_run_dir, output_root
+ from .reporting.report import (
++    build_report,
+     compare_reports,
+     export_run,
+     format_text_report,
+@@ -20,6 +22,15 @@ from .reporting.report import (
+     summarize_p1_spans,
+     write_reports,
+ )
++from .reporting.summary import (
++    build_aggregate,
++    build_run_summary,
++    format_aggregate_table,
++    format_summary_table,
++    aggregate_to_csv,
++    passes_filters,
++    summaries_to_csv,
++)
+ from .run_controller import RunController
+ from .storage.jsonl import JsonlWriter
+ from .trajectory.mini_swe import import_trajectory
+@@ -69,6 +80,23 @@ def build_parser() -> argparse.ArgumentParser:
+     add_config_args(exporter)
+     exporter.add_argument("run_id")
+     exporter.add_argument("--format", choices=["json", "csv"], default="json")
++
++    summary = subparsers.add_parser("summary", help="print a compact machine-readable run summary")
++    add_config_args(summary)
++    summary.add_argument("run_id")
++    summary.add_argument("--format", choices=["table", "json", "csv"], default="table")
++    summary.add_argument("--strict", action="store_true", help="exit non-zero on failed runs or data integrity issues")
++
++    aggregate = subparsers.add_parser("aggregate", help="aggregate compact summaries across runs")
++    add_config_args(aggregate)
++    aggregate.add_argument("run_ids", nargs="*")
++    aggregate.add_argument("--runs-root", help="scan run directories under this root")
++    aggregate.add_argument("--label", help="include only runs with this manifest label")
++    aggregate.add_argument("--status", help="include only runs with this run status")
++    aggregate.add_argument("--started-after", help="include runs starting at or after this epoch seconds/ns timestamp")
++    aggregate.add_argument("--started-before", help="include runs starting at or before this epoch seconds/ns timestamp")
++    aggregate.add_argument("--format", choices=["table", "json", "csv"], default="table")
++    aggregate.add_argument("--strict", action="store_true", help="exit non-zero if any included run violates strict checks")
+     return parser
+ 
+ 
+@@ -94,6 +122,10 @@ def main(argv: Sequence[str] | None = None) -> int:
+         return _import_trajectory(args)
+     if args.command == "export":
+         return _export(args)
++    if args.command == "summary":
++        return _summary(args)
++    if args.command == "aggregate":
++        return _aggregate(args)
+ 
+     parser.print_help()
+     return 0
+@@ -189,6 +221,54 @@ def _export(args: argparse.Namespace) -> int:
+     return 0
+ 
+ 
++def _summary(args: argparse.Namespace) -> int:
++    try:
++        cfg = _load_cfg(args)
++        report = load_report_for_run(find_run_dir(cfg, args.run_id))
++        summary = build_run_summary(report)
++    except Exception as exc:
++        print(f"agentmon summary error: {exc}", file=sys.stderr)
++        return 2
++    print(format_summary_output(summary, args.format), end="" if args.format == "csv" else "\n")
++    return 1 if args.strict and summary.get("strict_failures") else 0
++
++
++def _aggregate(args: argparse.Namespace) -> int:
++    try:
++        cfg = _load_cfg(args)
++        run_dirs = resolve_aggregate_run_dirs(cfg, args)
++        started_after_ns = parse_time_filter(args.started_after)
++        started_before_ns = parse_time_filter(args.started_before)
++        summaries: list[dict[str, object]] = []
++        reports: list[dict[str, object]] = []
++        skipped: list[dict[str, str]] = []
++        for run_dir in run_dirs:
++            try:
++                report = load_report_for_run(run_dir)
++                summary = build_run_summary(report)
++            except Exception as exc:
++                skipped.append({"run_dir": str(run_dir), "error": str(exc)})
++                continue
++            if not passes_filters(
++                summary,
++                label=args.label,
++                status=args.status,
++                started_after_ns=started_after_ns,
++                started_before_ns=started_before_ns,
++                report=report,
++            ):
++                continue
++            summaries.append(summary)
++            reports.append(report)
++        aggregate = build_aggregate(summaries, reports=reports)
++        aggregate["skipped_runs"] = skipped
++    except Exception as exc:
++        print(f"agentmon aggregate error: {exc}", file=sys.stderr)
++        return 2
++    print(format_aggregate_output(aggregate, args.format), end="" if args.format == "csv" else "\n")
++    return 1 if args.strict and aggregate.get("strict_failure_run_count") else 0
++
++
+ def _compare(args: argparse.Namespace) -> int:
+     try:
+         cfg = _load_cfg(args)
+@@ -203,6 +283,105 @@ def _compare(args: argparse.Namespace) -> int:
+     return 0
+ 
+ 
++def load_report_for_run(run_dir: str | Path) -> dict[str, object]:
++    run_path = Path(run_dir)
++    report_path = run_path / "report.json"
++    if report_path.exists():
++        return json.loads(report_path.read_text(encoding="utf-8"))
++    try:
++        report = build_report(run_path)
++        if report.get("run_id") or report.get("manifest"):
++            return report
++    except Exception:
++        pass
++    text_path = run_path / "report.txt"
++    if text_path.exists():
++        return parse_text_report(text_path.read_text(encoding="utf-8"))
++    raise FileNotFoundError(f"run report not found: {run_path}")
++
++
++def parse_text_report(text: str) -> dict[str, object]:
++    report: dict[str, object] = {"schema_version": "parsed-text-fallback"}
++    lines = text.splitlines()
++    section_map = {
++        "Data quality": "data_quality",
++        "Event Log": "event_log",
++        "Agent": "agent",
++        "P1 Spans": "p1_spans",
++        "Tool Attribution": "tool_attribution",
++        "vLLM": "vllm",
++        "KV Cache": "kv_cache",
++        "Proc": "proc",
++        "Ascend": "ascend",
++    }
++    for index, line in enumerate(lines[:-1]):
++        key = section_map.get(line.strip())
++        if not key:
++            continue
++        try:
++            report[key] = json.loads(lines[index + 1])
++        except json.JSONDecodeError:
++            continue
++    if lines:
++        header = lines[2] if len(lines) > 2 else ""
++        parts = header.split()
++        for part in parts:
++            if part.startswith("status="):
++                report["status"] = part.split("=", 1)[1]
++            elif part.startswith("exit="):
++                try:
++                    report["exit_code"] = int(part.split("=", 1)[1])
++                except ValueError:
++                    report["exit_code"] = None
++    return report
++
++
++def resolve_aggregate_run_dirs(cfg: object, args: argparse.Namespace) -> list[Path]:
++    base = Path(args.runs_root).expanduser() if args.runs_root else output_root(cfg)  # type: ignore[arg-type]
++    if args.run_ids:
++        return [resolve_run_arg(base, run_id) for run_id in args.run_ids]
++    if not base.exists():
++        return []
++    return sorted(path for path in base.iterdir() if path.is_dir())
++
++
++def resolve_run_arg(base: Path, run_id: str) -> Path:
++    path = Path(run_id).expanduser()
++    if path.exists():
++        return path
++    return base / run_id
++
++
++def parse_time_filter(value: str | None) -> int | None:
++    if value is None:
++        return None
++    try:
++        numeric = float(value)
++        return int(numeric if numeric > 10_000_000_000_000 else numeric * 1_000_000_000)
++    except ValueError:
++        text = value[:-1] + "+00:00" if value.endswith("Z") else value
++        parsed = datetime.fromisoformat(text)
++        if parsed.tzinfo is None:
++            parsed = parsed.replace(tzinfo=timezone.utc)
++        return int(parsed.timestamp() * 1_000_000_000)
++
++
++def format_summary_output(summary: dict[str, object], fmt: str) -> str:
++    if fmt == "json":
++        return json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True)
++    if fmt == "csv":
++        return summaries_to_csv([summary])
++    return format_summary_table(summary)
++
++
++def format_aggregate_output(aggregate: dict[str, object], fmt: str) -> str:
++    if fmt == "json":
++        return json.dumps(aggregate, ensure_ascii=False, indent=2, sort_keys=True)
++    if fmt == "csv":
++        return aggregate_to_csv(aggregate)
++    return format_aggregate_table(aggregate)
++
++
+ def _import_trajectory(args: argparse.Namespace) -> int:
+     try:
+         cfg = _load_cfg(args)
+diff --git a/src/agentmon/reporting/report.py b/src/agentmon/reporting/report.py
+index 7739bfc..fba9ca8 100644
+--- a/src/agentmon/reporting/report.py
++++ b/src/agentmon/reporting/report.py
+@@ -78,12 +78,18 @@ def build_report(run_dir: str | Path) -> dict[str, Any]:
+ 
+ 
+ def write_reports(run_dir: str | Path) -> dict[str, Any]:
++    from agentmon.reporting.summary import build_run_summary
++
+     run_path = Path(run_dir)
+     report = build_report(run_path)
+     write_private_text(
+         run_path / "report.json",
+         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
+     )
++    write_private_text(
++        run_path / "summary.json",
++        json.dumps(build_run_summary(report), ensure_ascii=False, indent=2, sort_keys=True),
++    )
+     write_private_text(run_path / "report.txt", format_text_report(report))
+     write_csv_report(report, run_path / "report.csv")
+     return report
+@@ -236,6 +242,9 @@ def summarize_p1_spans(
+                     "parent_span_id": payload.get("parent_span_id"),
+                     "span_type": span_type,
+                     "status": payload.get("status"),
++                    "terminal_reason": payload.get("terminal_reason"),
++                    "exit_status": payload.get("exit_status"),
++                    "submission_control_flow": payload.get("submission_control_flow"),
+                     "duration_s": ns_to_s(payload.get("duration_ns")),
+                     "step_id": payload.get("step_id"),
+                     "duration_estimated": False,
+@@ -547,6 +556,7 @@ def summarize_errors(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+     ]
+     return [
+         {
++            "event_type": event.get("event_type"),
+             "source": event.get("source"),
+             "wall_time_ns": event.get("wall_time_ns"),
+             "payload": event.get("payload"),
+diff --git a/src/agentmon/reporting/summary.py b/src/agentmon/reporting/summary.py
+new file mode 100644
+index 0000000..608e30a
+--- /dev/null
++++ b/src/agentmon/reporting/summary.py
+@@ -0,0 +1,630 @@
++from __future__ import annotations
++
++import csv
++import io
++import json
++import math
++from pathlib import Path
++from typing import Any, Iterable
++
++
++SUMMARY_SCHEMA_VERSION = "1.0"
++AGGREGATE_SCHEMA_VERSION = "1.0"
++
++
++SUMMARY_FIELDS = [
++    "run_id",
++    "label",
++    "task_success",
++    "data_integrity_pass",
++    "run_status",
++    "exit_code",
++    "agent_exit_status",
++    "duration_seconds",
++    "mini_swe_version",
++    "data_quality_status",
++    "api_calls",
++    "assistant_turns",
++    "agent_steps",
++    "model_requests",
++    "tool_calls",
++    "instrumentation_error_count",
++    "command_nonzero_count",
++    "expected_test_failure_count",
++    "submission_control_flow_count",
++    "tool_error_count",
++    "command_nonzero_return_count",
++    "prompt_tokens",
++    "generation_tokens",
++    "cached_tokens",
++    "instance_cost",
++    "model_latency.total",
++    "model_latency.mean",
++    "model_latency.p50",
++    "model_latency.p95",
++    "model_latency.max",
++    "tool_latency.total",
++    "tool_latency.mean",
++    "tool_latency.p50",
++    "tool_latency.p95",
++    "tool_latency.max",
++    "invalid_json_lines",
++    "duplicate_event_ids",
++    "p0_jsonl_sqlite_difference",
++    "event_count_mismatch",
++    "open_spans",
++    "abandoned_spans",
++    "orphan_end_spans",
++    "negative_durations",
++    "peak_pss_bytes",
++    "peak_rss_bytes",
++    "kv_cache_usage_ratio_max",
++    "prefix_cache_status",
++    "prefix_cache_hit_rate",
++    "prefix_cache_hit_rate_quality",
++    "vllm_request_count",
++    "preemption_count",
++    "npu_peak_hbm_bytes",
++    "npu_max_aicore_util_pct",
++    "npu_parser_confidence",
++    "npu_quality",
++]
++
++
++AGGREGATE_FIELDS = [
++    "run_count",
++    "success_count",
++    "failure_count",
++    "success_rate",
++    "task_success_count",
++    "data_integrity_pass_count",
++    "duration.p50",
++    "duration.p90",
++    "duration.p95",
++    "duration.max",
++    "model_latency.p50",
++    "model_latency.p90",
++    "model_latency.p95",
++    "model_latency.max",
++    "tool_latency.p50",
++    "tool_latency.p90",
++    "tool_latency.p95",
++    "tool_latency.max",
++    "api_calls.total",
++    "api_calls.mean",
++    "model_requests.total",
++    "model_requests.mean",
++    "tool_calls.total",
++    "tool_calls.mean",
++    "instrumentation_error_count.total",
++    "command_nonzero_count.total",
++    "submission_control_flow_count.total",
++    "prompt_tokens.total",
++    "prompt_tokens.mean",
++    "generation_tokens.total",
++    "generation_tokens.mean",
++    "peak_pss_bytes.p50",
++    "peak_pss_bytes.p95",
++    "peak_pss_bytes.max",
++    "peak_rss_bytes.p50",
++    "peak_rss_bytes.p95",
++    "peak_rss_bytes.max",
++    "kv_cache_usage_ratio_max.p50",
++    "kv_cache_usage_ratio_max.p95",
++    "kv_cache_usage_ratio_max.max",
++    "prefix_cache_hit_rate.mean",
++]
++
++
++def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
++    manifest = as_dict(report.get("manifest"))
++    agent = as_dict(report.get("agent"))
++    event_log = as_dict(report.get("event_log"))
++    p1 = as_dict(report.get("p1_spans"))
++    tool_attr = as_dict(report.get("tool_attribution"))
++    proc = as_dict(report.get("proc"))
++    kv_cache = as_dict(report.get("kv_cache"))
++    vllm = as_dict(report.get("vllm"))
++    ascend = as_dict(report.get("ascend"))
++
++    model_durations = span_durations(report, "model_request")
++    tool_durations = span_durations(report, "tool_call")
++    tool_error_count = count_spans(report, span_type="tool_call", statuses={"error"})
++    command_nonzero_count = count_nonzero_commands(tool_attr)
++    instrumentation_error_count = count_instrumentation_errors(report)
++    submission_control_flow_count = count_submission_control_flow(report)
++    npu_peak_hbm, npu_max_aicore = summarize_npu_devices(ascend)
++    prefix_status = none_if_unavailable(kv_cache.get("prefix_cache_status"))
++    prefix_hit_rate = numeric_or_none(kv_cache.get("prefix_cache_hit_rate"))
++    prefix_hit_quality = none_if_unavailable(kv_cache.get("prefix_cache_hit_rate_quality"))
++    run_status = report.get("status") or manifest.get("status")
++    exit_code = report.get("exit_code") if report.get("exit_code") is not None else manifest.get("exit_code")
++    agent_exit_status = agent.get("exit_status")
++
++    summary = {
++        "schema_version": SUMMARY_SCHEMA_VERSION,
++        "summary_type": "agentmon.run_summary",
++        "source_report_schema_version": report.get("schema_version"),
++        "run_id": report.get("run_id") or manifest.get("run_id"),
++        "label": manifest.get("label"),
++        "run_status": run_status,
++        "exit_code": exit_code,
++        "agent_exit_status": agent_exit_status,
++        "duration_seconds": numeric_or_none(report.get("duration_s")),
++        "mini_swe_version": agent.get("mini_version"),
++        "data_quality_status": summarize_data_quality_status(as_dict(report.get("data_quality"))),
++        "data_quality": as_dict(report.get("data_quality")),
++        "api_calls": numeric_or_none(agent.get("api_calls")),
++        "assistant_turns": numeric_or_none(agent.get("assistant_turns")),
++        "agent_steps": numeric_or_none(p1.get("agent_steps")),
++        "model_requests": numeric_or_none(p1.get("model_requests")),
++        "tool_calls": numeric_or_none(p1.get("tool_calls")),
++        "instrumentation_error_count": instrumentation_error_count,
++        "command_nonzero_count": command_nonzero_count,
++        "expected_test_failure_count": numeric_or_none(manifest.get("expected_test_failure_count")),
++        "submission_control_flow_count": submission_control_flow_count,
++        "tool_error_count": tool_error_count,
++        "command_nonzero_return_count": command_nonzero_count,
++        "prompt_tokens": numeric_or_none(agent.get("prompt_tokens")),
++        "generation_tokens": numeric_or_none(agent.get("completion_tokens")),
++        "cached_tokens": numeric_or_none(agent.get("cached_tokens")),
++        "instance_cost": numeric_or_none(agent.get("instance_cost")),
++        "model_latency": latency_stats(model_durations),
++        "tool_latency": latency_stats(tool_durations),
++        "invalid_json_lines": numeric_or_none(event_log.get("jsonl_invalid_count", event_log.get("jsonl_invalid_lines"))),
++        "duplicate_event_ids": numeric_or_none(event_log.get("duplicate_event_ids")),
++        "p0_jsonl_sqlite_difference": numeric_or_none(event_log.get("p0_jsonl_sqlite_difference")),
++        "event_count_mismatch": bool(event_log.get("event_count_mismatch") or event_log.get("p0_jsonl_sqlite_mismatch")),
++        "open_spans": numeric_or_none(p1.get("open_span_count")),
++        "abandoned_spans": numeric_or_none(p1.get("abandoned_span_count")),
++        "orphan_end_spans": numeric_or_none(p1.get("orphan_end_count")),
++        "negative_durations": numeric_or_none(p1.get("negative_duration_count")),
++        "peak_pss_bytes": numeric_or_none(proc.get("agent_peak_pss_bytes")),
++        "peak_rss_bytes": numeric_or_none(proc.get("agent_peak_rss_bytes")),
++        "kv_cache_usage_ratio_max": numeric_or_none(kv_cache.get("kv_cache_usage_ratio_max")),
++        "prefix_cache_status": prefix_status,
++        "prefix_cache_hit_rate": None if prefix_status == "disabled" else prefix_hit_rate,
++        "prefix_cache_hit_rate_quality": "disabled" if prefix_status == "disabled" else prefix_hit_quality,
++        "vllm_request_count": find_counter_delta(vllm, ["request_success_total", "requests_total"], ["request"]),
++        "preemption_count": find_counter_delta(vllm, ["preemption_total", "preemptions_total"], ["preemption"]),
++        "npu_peak_hbm_bytes": npu_peak_hbm,
++        "npu_max_aicore_util_pct": npu_max_aicore,
++        "npu_parser_confidence": numeric_or_none(ascend.get("parser_confidence")),
++        "npu_quality": ascend.get("status"),
++    }
++    summary["data_integrity_pass"] = data_integrity_pass(summary)
++    summary["task_success"] = (
++        run_status == "success"
++        and exit_code == 0
++        and str(agent_exit_status).lower() == "submitted"
++        and summary["data_integrity_pass"]
++    )
++    summary["strict_failures"] = strict_failures(summary)
++    return summary
++
++
++def build_aggregate(
++    summaries: list[dict[str, Any]],
++    *,
++    reports: list[dict[str, Any]] | None = None,
++) -> dict[str, Any]:
++    reports = reports or []
++    run_count = len(summaries)
++    success_count = sum(1 for item in summaries if item.get("run_status") == "success")
++    failure_count = run_count - success_count
++    model_durations = flatten(span_durations(report, "model_request") for report in reports)
++    tool_durations = flatten(span_durations(report, "tool_call") for report in reports)
++    model_latency_denominator: int | None = int(sum(values(summaries, "model_requests"))) or None
++    tool_latency_denominator: int | None = int(sum(values(summaries, "tool_calls"))) or None
++    if not model_durations:
++        model_durations = values(summaries, "model_latency.mean")
++        model_latency_denominator = run_count
++    if not tool_durations:
++        tool_durations = values(summaries, "tool_latency.mean")
++        tool_latency_denominator = run_count
++
++    aggregate = {
++        "schema_version": AGGREGATE_SCHEMA_VERSION,
++        "summary_type": "agentmon.aggregate_summary",
++        "run_count": run_count,
++        "success_count": success_count,
++        "failure_count": failure_count,
++        "success_rate": (success_count / run_count) if run_count else None,
++        "task_success_count": sum(1 for item in summaries if item.get("task_success") is True),
++        "data_integrity_pass_count": sum(1 for item in summaries if item.get("data_integrity_pass") is True),
++        "failure_by_exit_status": count_failures_by_exit_status(summaries),
++        "duration": percentile_stats(values(summaries, "duration_seconds"), [50, 90, 95], denominator=run_count),
++        "model_latency": percentile_stats(model_durations, [50, 90, 95], denominator=model_latency_denominator),
++        "tool_latency": percentile_stats(tool_durations, [50, 90, 95], denominator=tool_latency_denominator),
++        "api_calls": total_mean(values(summaries, "api_calls"), run_count),
++        "model_requests": total_mean(values(summaries, "model_requests"), run_count),
++        "tool_calls": total_mean(values(summaries, "tool_calls"), run_count),
++        "instrumentation_error_count": total_mean(values(summaries, "instrumentation_error_count"), run_count),
++        "command_nonzero_count": total_mean(values(summaries, "command_nonzero_count"), run_count),
++        "submission_control_flow_count": total_mean(values(summaries, "submission_control_flow_count"), run_count),
++        "prompt_tokens": total_mean(values(summaries, "prompt_tokens"), run_count),
++        "generation_tokens": total_mean(values(summaries, "generation_tokens"), run_count),
++        "peak_pss_bytes": percentile_stats(values(summaries, "peak_pss_bytes"), [50, 95], denominator=run_count),
++        "peak_rss_bytes": percentile_stats(values(summaries, "peak_rss_bytes"), [50, 95], denominator=run_count),
++        "kv_cache_usage_ratio_max": percentile_stats(
++            values(summaries, "kv_cache_usage_ratio_max"),
++            [50, 95],
++            denominator=run_count,
++        ),
++        "data_quality_failures": count_data_quality_failures(summaries),
++        "span_issue_run_counts": {
++            "open_spans": count_runs_with_positive(summaries, "open_spans"),
++            "abandoned_spans": count_runs_with_positive(summaries, "abandoned_spans"),
++            "negative_durations": count_runs_with_positive(summaries, "negative_durations"),
++            "orphan_end_spans": count_runs_with_positive(summaries, "orphan_end_spans"),
++        },
++        "prefix_cache_status_counts": count_values(summaries, "prefix_cache_status", missing="unknown"),
++        "prefix_cache_hit_rate": prefix_cache_hit_rate_aggregate(summaries),
++        "strict_failure_run_count": sum(1 for item in summaries if item.get("strict_failures")),
++        "runs": summaries,
++    }
++    return aggregate
++
++
++def strict_failures(summary: dict[str, Any]) -> list[str]:
++    failures: list[str] = []
++    if summary.get("run_status") not in {None, "success"}:
++        failures.append("run_status")
++    if positive(summary.get("invalid_json_lines")):
++        failures.append("invalid_json")
++    if positive(summary.get("duplicate_event_ids")):
++        failures.append("duplicate_event_ids")
++    if positive(summary.get("open_spans")):
++        failures.append("open_spans")
++    if positive(summary.get("negative_durations")):
++        failures.append("negative_durations")
++    if summary.get("event_count_mismatch"):
++        failures.append("p0_jsonl_sqlite_mismatch")
++    return failures
++
++
++def data_integrity_pass(summary: dict[str, Any]) -> bool:
++    return (
++        not positive(summary.get("invalid_json_lines"))
++        and not positive(summary.get("duplicate_event_ids"))
++        and not positive(summary.get("open_spans"))
++        and not positive(summary.get("negative_durations"))
++        and not bool(summary.get("event_count_mismatch"))
++    )
++
++
++def passes_filters(
++    summary: dict[str, Any],
++    *,
++    label: str | None = None,
++    status: str | None = None,
++    started_after_ns: int | None = None,
++    started_before_ns: int | None = None,
++    report: dict[str, Any] | None = None,
++) -> bool:
++    if label is not None and summary.get("label") != label:
++        return False
++    if status is not None and summary.get("run_status") != status:
++        return False
++    manifest = as_dict((report or {}).get("manifest"))
++    start_wall_ns = manifest.get("start_wall_ns") or manifest.get("created_wall_ns")
++    if started_after_ns is not None and (not isinstance(start_wall_ns, int) or start_wall_ns < started_after_ns):
++        return False
++    if started_before_ns is not None and (not isinstance(start_wall_ns, int) or start_wall_ns > started_before_ns):
++        return False
++    return True
++
++
++def format_summary_table(summary: dict[str, Any]) -> str:
++    rows = [(field, display_value(get_nested(summary, field))) for field in SUMMARY_FIELDS]
++    return render_table(["metric", "value"], rows)
++
++
++def format_aggregate_table(aggregate: dict[str, Any]) -> str:
++    rows = [(field, display_value(get_nested(aggregate, field))) for field in AGGREGATE_FIELDS]
++    rows.append(("strict_failure_run_count", display_value(aggregate.get("strict_failure_run_count"))))
++    return render_table(["metric", "value"], rows)
++
++
++def summaries_to_csv(summaries: list[dict[str, Any]]) -> str:
++    return rows_to_csv(summaries, SUMMARY_FIELDS)
++
++
++def aggregate_to_csv(aggregate: dict[str, Any]) -> str:
++    row = {field: get_nested(aggregate, field) for field in AGGREGATE_FIELDS}
++    row["strict_failure_run_count"] = aggregate.get("strict_failure_run_count")
++    return rows_to_csv([row], [*AGGREGATE_FIELDS, "strict_failure_run_count"], already_flat=True)
++
++
++def rows_to_csv(rows: list[dict[str, Any]], fields: list[str], *, already_flat: bool = False) -> str:
++    handle = io.StringIO()
++    writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
++    writer.writeheader()
++    for row in rows:
++        if already_flat:
++            flat = {key: csv_value(row.get(key)) for key in fields}
++        else:
++            flat = {field: csv_value(get_nested(row, field)) for field in fields}
++        writer.writerow(flat)
++    return handle.getvalue()
++
++
++def render_table(headers: list[str], rows: list[tuple[str, str]]) -> str:
++    widths = [
++        max(len(headers[0]), *(len(str(row[0])) for row in rows)) if rows else len(headers[0]),
++        max(len(headers[1]), *(len(str(row[1])) for row in rows)) if rows else len(headers[1]),
++    ]
++    lines = [
++        f"{headers[0].ljust(widths[0])}  {headers[1].ljust(widths[1])}",
++        f"{'-' * widths[0]}  {'-' * widths[1]}",
++    ]
++    lines.extend(f"{str(key).ljust(widths[0])}  {str(value).ljust(widths[1])}" for key, value in rows)
++    return "\n".join(lines)
++
++
++def span_durations(report: dict[str, Any], span_type: str) -> list[float]:
++    spans = as_dict(report.get("p1_spans")).get("spans") or []
++    result: list[float] = []
++    for span in spans:
++        if not isinstance(span, dict) or span.get("span_type") != span_type:
++            continue
++        value = numeric_or_none(span.get("duration_s"))
++        if value is not None:
++            result.append(float(value))
++    return result
++
++
++def latency_stats(values_: list[float]) -> dict[str, Any]:
++    return {
++        "total": sum(values_) if values_ else None,
++        "mean": (sum(values_) / len(values_)) if values_ else None,
++        "p50": percentile(values_, 50),
++        "p95": percentile(values_, 95),
++        "max": max(values_) if values_ else None,
++        "sample_count": len(values_),
++    }
++
++
++def percentile_stats(values_: list[float], percentiles: list[int], *, denominator: int | None = None) -> dict[str, Any]:
++    stats = {f"p{item}": percentile(values_, item) for item in percentiles}
++    stats["max"] = max(values_) if values_ else None
++    stats["sample_count"] = len(values_)
++    stats["coverage"] = (len(values_) / denominator) if denominator else None
++    return stats
++
++
++def percentile(values_: list[float], pct: float) -> float | None:
++    clean = sorted(value for value in values_ if isinstance(value, (int, float)) and math.isfinite(float(value)))
++    if not clean:
++        return None
++    if len(clean) == 1:
++        return float(clean[0])
++    rank = (float(pct) / 100.0) * (len(clean) - 1)
++    lower = math.floor(rank)
++    upper = math.ceil(rank)
++    if lower == upper:
++        return float(clean[int(rank)])
++    lower_value = clean[lower]
++    upper_value = clean[upper]
++    return float(lower_value + (upper_value - lower_value) * (rank - lower))
++
++
++def total_mean(values_: list[float], run_count: int) -> dict[str, Any]:
++    total = sum(values_) if values_ else None
++    return {
++        "total": total,
++        "mean": (total / len(values_)) if values_ else None,
++        "sample_count": len(values_),
++        "coverage": (len(values_) / run_count) if run_count else None,
++    }
++
++
++def prefix_cache_hit_rate_aggregate(summaries: list[dict[str, Any]]) -> dict[str, Any]:
++    values_: list[float] = []
++    enabled_count = 0
++    for summary in summaries:
++        if summary.get("prefix_cache_status") != "enabled":
++            continue
++        enabled_count += 1
++        value = numeric_or_none(summary.get("prefix_cache_hit_rate"))
++        if value is not None:
++            values_.append(value)
++    return {
++        "mean": (sum(values_) / len(values_)) if values_ else None,
++        "sample_count": len(values_),
++        "enabled_run_count": enabled_count,
++        "coverage": (len(values_) / enabled_count) if enabled_count else None,
++    }
++
++
++def count_spans(report: dict[str, Any], *, span_type: str, statuses: set[str]) -> int | None:
++    spans = as_dict(report.get("p1_spans")).get("spans")
++    if not isinstance(spans, list):
++        return None
++    count = 0
++    for span in spans:
++        if isinstance(span, dict) and span.get("span_type") == span_type and span.get("status") in statuses:
++            count += 1
++    return count
++
++
++def count_nonzero_commands(tool_attr: dict[str, Any]) -> int | None:
++    tools = tool_attr.get("tools")
++    if not isinstance(tools, list):
++        return None
++    count = 0
++    for tool in tools:
++        if not isinstance(tool, dict):
++            continue
++        returncode = tool.get("returncode")
++        if isinstance(returncode, int) and returncode != 0:
++            count += 1
++    return count
++
++
++def count_instrumentation_errors(report: dict[str, Any]) -> int | None:
++    spans = as_dict(report.get("p1_spans")).get("spans")
++    if isinstance(spans, list):
++        return sum(
++            1
++            for span in spans
++            if isinstance(span, dict)
++            and span.get("status") == "error"
++            and span.get("terminal_reason") != "submitted"
++            and not span.get("submission_control_flow")
++        )
++    errors = report.get("errors")
++    if not isinstance(errors, list):
++        return None
++    return sum(1 for error in errors if isinstance(error, dict) and str(error.get("event_type", "")).endswith(".error"))
++
++
++def count_submission_control_flow(report: dict[str, Any]) -> int | None:
++    spans = as_dict(report.get("p1_spans")).get("spans")
++    if not isinstance(spans, list):
++        return None
++    return sum(
++        1
++        for span in spans
++        if isinstance(span, dict)
++        and (span.get("terminal_reason") == "submitted" or span.get("submission_control_flow") is True)
++    )
++
++
++def summarize_npu_devices(ascend: dict[str, Any]) -> tuple[int | None, float | None]:
++    hbm_values: list[int] = []
++    aicore_values: list[float] = []
++    for device in as_dict(ascend.get("devices")).values():
++        if not isinstance(device, dict):
++            continue
++        hbm = numeric_or_none(device.get("peak_hbm_used_bytes"))
++        aicore = numeric_or_none(device.get("max_aicore_util_pct"))
++        if hbm is not None:
++            hbm_values.append(int(hbm))
++        if aicore is not None:
++            aicore_values.append(float(aicore))
++    return (max(hbm_values) if hbm_values else None, max(aicore_values) if aicore_values else None)
++
++
++def summarize_data_quality_status(data_quality: dict[str, Any]) -> str:
++    if not data_quality:
++        return "missing"
++    values_ = [str(value) for value in data_quality.values()]
++    if all(value == "complete" for value in values_):
++        return "complete"
++    if any(value == "complete" for value in values_):
++        return "partial"
++    return "missing"
++
++
++def count_failures_by_exit_status(summaries: list[dict[str, Any]]) -> dict[str, int]:
++    counts: dict[str, int] = {}
++    for summary in summaries:
++        if summary.get("run_status") == "success":
++            continue
++        key = str(summary.get("agent_exit_status") or "N/A")
++        counts[key] = counts.get(key, 0) + 1
++    return counts
++
++
++def count_data_quality_failures(summaries: list[dict[str, Any]]) -> dict[str, int]:
++    counts: dict[str, int] = {}
++    for summary in summaries:
++        for key, value in as_dict(summary.get("data_quality")).items():
++            if value != "complete":
++                counts[key] = counts.get(key, 0) + 1
++    return counts
++
++
++def count_runs_with_positive(summaries: list[dict[str, Any]], key: str) -> int:
++    return sum(1 for summary in summaries if positive(summary.get(key)))
++
++
++def count_values(summaries: list[dict[str, Any]], key: str, *, missing: str) -> dict[str, int]:
++    counts: dict[str, int] = {}
++    for summary in summaries:
++        value = summary.get(key)
++        label = str(value) if value not in {None, ""} else missing
++        counts[label] = counts.get(label, 0) + 1
++    return counts
++
++
++def find_counter_delta(vllm: dict[str, Any], exact_needles: list[str], contains_needles: list[str]) -> float | None:
++    deltas = as_dict(vllm.get("counter_deltas"))
++    if not deltas:
++        return None
++    for name in sorted(deltas):
++        lowered = name.lower()
++        if any(needle in lowered for needle in exact_needles):
++            return numeric_or_none(deltas[name])
++    for name in sorted(deltas):
++        lowered = name.lower()
++        if any(needle in lowered for needle in contains_needles):
++            return numeric_or_none(deltas[name])
++    return None
++
++
++def values(items: list[dict[str, Any]], dotted_key: str) -> list[float]:
++    result: list[float] = []
++    for item in items:
++        value = numeric_or_none(get_nested(item, dotted_key))
++        if value is not None:
++            result.append(float(value))
++    return result
++
++
++def flatten(groups: Iterable[list[float]]) -> list[float]:
++    result: list[float] = []
++    for group in groups:
++        result.extend(group)
++    return result
++
++
++def get_nested(data: dict[str, Any], dotted_key: str) -> Any:
++    value: Any = data
++    for part in dotted_key.split("."):
++        if not isinstance(value, dict):
++            return None
++        value = value.get(part)
++    return value
++
++
++def as_dict(value: Any) -> dict[str, Any]:
++    return value if isinstance(value, dict) else {}
++
++
++def numeric_or_none(value: Any) -> float | int | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, (int, float)) and math.isfinite(float(value)):
++        return value
++    return None
++
++
++def none_if_unavailable(value: Any) -> Any:
++    return None if value in {"unavailable", "N/A", ""} else value
++
++
++def positive(value: Any) -> bool:
++    numeric = numeric_or_none(value)
++    return numeric is not None and numeric > 0
++
++
++def display_value(value: Any) -> str:
++    if value is None:
++        return "N/A"
++    if isinstance(value, bool):
++        return "true" if value else "false"
++    if isinstance(value, float):
++        return f"{value:.6g}"
++    if isinstance(value, (dict, list)):
++        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++    return str(value)
++
++
++def csv_value(value: Any) -> Any:
++    if value is None:
++        return "N/A"
++    if isinstance(value, (dict, list)):
++        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++    return value
+diff --git a/tests/unit/test_p1_adapters.py b/tests/unit/test_p1_adapters.py
+index 5bb8278..224cc24 100644
+--- a/tests/unit/test_p1_adapters.py
++++ b/tests/unit/test_p1_adapters.py
+@@ -58,10 +58,32 @@ class BaseAgent:
+         return {"info": {}}
+ 
+ 
++class Submitted(Exception):
++    def __init__(self) -> None:
++        super().__init__("submitted")
++        self.messages = [
++            {
++                "role": "assistant",
++                "content": "hidden submission",
++                "extra": {"exit_status": "Submitted"},
++            }
++        ]
++
++
++class SubmittedAgent(BaseAgent):
++    def step(self):
++        self.n_calls += 1
++        raise Submitted()
++
++
+ class FakeInstrumentedAgent(InstrumentedAgentMixin, BaseAgent):
+     pass
+ 
+ 
++class FakeSubmittedInstrumentedAgent(InstrumentedAgentMixin, SubmittedAgent):
++    pass
++
++
+ class FakeMiniSweLocalEnvironment(MiniSweLocalExecutionMixin):
+     def __init__(self, tmp: str, sink: AdapterEventSink) -> None:
+         self.config = SimpleNamespace(cwd=tmp, env={}, timeout=5)
+@@ -79,6 +101,12 @@ class FakeMiniSweLocalEnvironmentWithFailingChecker(FakeMiniSweLocalEnvironment)
+         raise RuntimeError("checker stopped execution")
+ 
+ 
++class FakeMiniSweLocalEnvironmentWithSubmittedChecker(FakeMiniSweLocalEnvironment):
++    def _check_finished(self, output):
++        self.checked_result = output
++        raise Submitted()
++
++
+ class P1AdapterTests(unittest.TestCase):
+     def make_sink(self, tmp: str) -> AdapterEventSink:
+         context = AgentMonContext(
+@@ -212,6 +240,28 @@ class P1AdapterTests(unittest.TestCase):
+             events = self.read_events(tmp)
+             self.assertIn("tool_call.error", [event["event_type"] for event in events])
+ 
++    def test_mini_swe_local_environment_treats_submitted_checker_as_control_flow(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            sink = self.make_sink(tmp)
++            env = FakeMiniSweLocalEnvironmentWithSubmittedChecker(tmp, sink)
++
++            with self.assertRaises(Submitted):
++                env.execute({"command": "printf hi"})
++            sink.close()
++
++            self.assertIsInstance(env.checked_result, dict)
++            self.assertEqual(env.checked_result["output"], "hi")
++            self.assertEqual(env.checked_result["returncode"], 0)
++            events = self.read_events(tmp)
++            event_types = [event["event_type"] for event in events]
++            self.assertIn("tool_call.end", event_types)
++            self.assertNotIn("tool_call.error", event_types)
++            tool_end = next(event for event in events if event["event_type"] == "tool_call.end")
++            self.assertEqual(tool_end["payload"]["status"], "submitted")
++            self.assertEqual(tool_end["payload"]["terminal_reason"], "submitted")
++            self.assertEqual(tool_end["payload"]["returncode"], 0)
++            self.assertNotIn("hidden submission", json.dumps(events))
++
+     def test_agent_mixin_emits_spans_and_adds_serialize_metadata(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+             sink = self.make_sink(tmp)
+@@ -234,6 +284,28 @@ class P1AdapterTests(unittest.TestCase):
+             step_start = next(event for event in events if event["event_type"] == "agent_step.start")
+             self.assertEqual(step_start["payload"]["parent_span_id"], "run:run-p1")
+ 
++    def test_agent_step_treats_submitted_exception_as_control_flow(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            sink = self.make_sink(tmp)
++            agent = FakeSubmittedInstrumentedAgent()
++            agent.agentmon_sink = sink
++            agent.agentmon_current_step_id = None
++
++            with self.assertRaises(Submitted):
++                agent.step()
++            sink.close()
++
++            events = self.read_events(tmp)
++            event_types = [event["event_type"] for event in events]
++            self.assertIn("agent_step.end", event_types)
++            self.assertNotIn("agent_step.error", event_types)
++            step_end = next(event for event in events if event["event_type"] == "agent_step.end")
++            self.assertEqual(step_end["payload"]["status"], "submitted")
++            self.assertEqual(step_end["payload"]["terminal_reason"], "submitted")
++            self.assertEqual(step_end["payload"]["exit_status"], "Submitted")
++            self.assertEqual(step_end["payload"]["n_calls"], 1)
++            self.assertNotIn("hidden submission", json.dumps(events))
++
+     def test_nested_span_parent_id_uses_agent_step(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+             sink = self.make_sink(tmp)
+diff --git a/tests/unit/test_run_controller.py b/tests/unit/test_run_controller.py
+index 8792c9d..8fdaf1b 100644
+--- a/tests/unit/test_run_controller.py
++++ b/tests/unit/test_run_controller.py
+@@ -45,6 +45,7 @@ class RunControllerTests(unittest.TestCase):
+             self.assertEqual(manifest["status"], "failed")
+             self.assertTrue((run_dirs[0] / "events.jsonl").exists())
+             self.assertTrue((run_dirs[0] / "report.json").exists())
++            self.assertTrue((run_dirs[0] / "summary.json").exists())
+ 
+     def test_run_cleans_child_pythonpath_and_expands_run_id_placeholder(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+diff --git a/tests/unit/test_smoke_check.py b/tests/unit/test_smoke_check.py
+new file mode 100644
+index 0000000..64119fd
+--- /dev/null
++++ b/tests/unit/test_smoke_check.py
+@@ -0,0 +1,63 @@
++import importlib.util
++import io
++import json
++import tempfile
++import unittest
++from contextlib import redirect_stdout
++from pathlib import Path
++
++from agentmon.reporting.summary import build_run_summary
++from tests.unit.test_summary import make_report
++
++
++ROOT = Path(__file__).resolve().parents[2]
++SMOKE_SCRIPT = ROOT / "scripts" / "agentmon_p1_smoke_check.py"
++
++
++def load_smoke_module():
++    spec = importlib.util.spec_from_file_location("agentmon_p1_smoke_check", SMOKE_SCRIPT)
++    module = importlib.util.module_from_spec(spec)
++    assert spec.loader is not None
++    spec.loader.exec_module(module)
++    return module
++
++
++class SmokeCheckTests(unittest.TestCase):
++    def test_smoke_check_allows_nonzero_commands_as_metric_only(self) -> None:
++        module = load_smoke_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp) / "run-ok"
++            run_dir.mkdir()
++            report = make_report(run_id="run-ok")
++            summary = build_run_summary(report)
++            (run_dir / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
++
++            exit_code, output = run_script(module, str(run_dir), "--smoke-rc", "0", "--final-test-rc", "0")
++
++        payload = json.loads(output)
++        self.assertEqual(exit_code, 0)
++        self.assertTrue(payload["task_success"])
++        self.assertEqual(payload["command_nonzero_count"], 1)
++        self.assertEqual(payload["issues"], [])
++
++    def test_smoke_check_fails_on_final_test_rc_not_error_suffix(self) -> None:
++        module = load_smoke_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp) / "run-failed"
++            run_dir.mkdir()
++            summary = build_run_summary(make_report(run_id="run-failed"))
++            (run_dir / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
++
++            exit_code, output = run_script(module, str(run_dir), "--smoke-rc", "0", "--final-test-rc", "1")
++
++        payload = json.loads(output)
++        self.assertEqual(exit_code, 1)
++        self.assertFalse(payload["task_success"])
++        self.assertEqual(payload["issues"], ["final_test_rc"])
++
++
++def run_script(module, *args: str) -> tuple[int, str]:
++    stdout = io.StringIO()
++    with redirect_stdout(stdout):
++        exit_code = module.main(list(args))
++    return exit_code, stdout.getvalue()
+diff --git a/tests/unit/test_summary.py b/tests/unit/test_summary.py
+new file mode 100644
+index 0000000..416ca28
+--- /dev/null
++++ b/tests/unit/test_summary.py
+@@ -0,0 +1,255 @@
++import io
++import json
++import tempfile
++import unittest
++from contextlib import redirect_stdout
++from pathlib import Path
++
++from agentmon.cli import main as agentmon_main
++from agentmon.reporting.summary import build_aggregate, build_run_summary, percentile
++
++
++class SummaryTests(unittest.TestCase):
++    def test_success_summary_keeps_prefix_disabled_as_na(self) -> None:
++        summary = build_run_summary(make_report(prefix_status="disabled"))
++
++        self.assertEqual(summary["schema_version"], "1.0")
++        self.assertTrue(summary["task_success"])
++        self.assertTrue(summary["data_integrity_pass"])
++        self.assertEqual(summary["run_status"], "success")
++        self.assertEqual(summary["agent_exit_status"], "submitted")
++        self.assertEqual(summary["model_requests"], 2)
++        self.assertEqual(summary["tool_calls"], 2)
++        self.assertEqual(summary["instrumentation_error_count"], 0)
++        self.assertEqual(summary["command_nonzero_count"], 1)
++        self.assertIsNone(summary["expected_test_failure_count"])
++        self.assertEqual(summary["submission_control_flow_count"], 0)
++        self.assertEqual(summary["tool_error_count"], 0)
++        self.assertEqual(summary["command_nonzero_return_count"], 1)
++        self.assertIsNone(summary["prefix_cache_hit_rate"])
++        self.assertEqual(summary["prefix_cache_hit_rate_quality"], "disabled")
++        self.assertEqual(summary["npu_peak_hbm_bytes"], 123)
++        self.assertEqual(summary["npu_max_aicore_util_pct"], 80.0)
++        self.assertEqual(summary["strict_failures"], [])
++
++    def test_failed_run_and_integrity_issues_are_strict_failures(self) -> None:
++        report = make_report(status="failed")
++        report["event_log"].update(
++            {
++                "jsonl_invalid_count": 1,
++                "duplicate_event_ids": 1,
++                "p0_jsonl_sqlite_difference": 2,
++                "event_count_mismatch": True,
++            }
++        )
++        report["p1_spans"].update({"open_span_count": 1, "negative_duration_count": 1})
++
++        summary = build_run_summary(report)
++
++        self.assertFalse(summary["task_success"])
++        self.assertFalse(summary["data_integrity_pass"])
++        self.assertIn("run_status", summary["strict_failures"])
++        self.assertIn("invalid_json", summary["strict_failures"])
++        self.assertIn("duplicate_event_ids", summary["strict_failures"])
++        self.assertIn("open_spans", summary["strict_failures"])
++        self.assertIn("negative_durations", summary["strict_failures"])
++        self.assertIn("p0_jsonl_sqlite_mismatch", summary["strict_failures"])
++
++    def test_null_npu_metrics_remain_null(self) -> None:
++        report = make_report()
++        report["ascend"] = {
++            "status": "partial",
++            "parser_confidence": None,
++            "devices": {"0": {"peak_hbm_used_bytes": None, "max_aicore_util_pct": None}},
++        }
++
++        summary = build_run_summary(report)
++
++        self.assertIsNone(summary["npu_peak_hbm_bytes"])
++        self.assertIsNone(summary["npu_max_aicore_util_pct"])
++        self.assertIsNone(summary["npu_parser_confidence"])
++        self.assertEqual(summary["npu_quality"], "partial")
++
++    def test_aggregate_uses_percentiles_and_coverage(self) -> None:
++        reports = [
++            make_report(run_id="r1", duration_s=1.0, prompt_tokens=10, generation_tokens=5, pss=100, kv=0.1),
++            make_report(run_id="r2", duration_s=2.0, prompt_tokens=20, generation_tokens=10, pss=200, kv=0.2),
++            make_report(run_id="r3", duration_s=100.0, prompt_tokens=None, generation_tokens=None, pss=None, kv=None),
++        ]
++        summaries = [build_run_summary(report) for report in reports]
++
++        aggregate = build_aggregate(summaries, reports=reports)
++
++        self.assertEqual(aggregate["run_count"], 3)
++        self.assertEqual(aggregate["success_count"], 3)
++        self.assertEqual(aggregate["task_success_count"], 3)
++        self.assertEqual(aggregate["data_integrity_pass_count"], 3)
++        self.assertEqual(aggregate["duration"]["p50"], 2.0)
++        self.assertAlmostEqual(aggregate["duration"]["p90"], 80.4)
++        self.assertEqual(aggregate["prompt_tokens"]["total"], 30)
++        self.assertEqual(aggregate["prompt_tokens"]["sample_count"], 2)
++        self.assertAlmostEqual(aggregate["prompt_tokens"]["coverage"], 2 / 3)
++        self.assertEqual(aggregate["peak_pss_bytes"]["max"], 200)
++        self.assertEqual(aggregate["kv_cache_usage_ratio_max"]["sample_count"], 2)
++        self.assertEqual(aggregate["command_nonzero_count"]["total"], 3)
++        self.assertEqual(aggregate["instrumentation_error_count"]["total"], 0)
++
++    def test_percentile_empty_returns_none(self) -> None:
++        self.assertIsNone(percentile([], 95))
++
++    def test_summary_cli_outputs_json_csv_table_and_strict_exit(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            write_report(tmp, make_report(run_id="run-ok"))
++
++            json_exit, json_output = run_cli("summary", "--output-root", tmp, "run-ok", "--format", "json")
++            csv_exit, csv_output = run_cli("summary", "--output-root", tmp, "run-ok", "--format", "csv")
++            table_exit, table_output = run_cli("summary", "--output-root", tmp, "run-ok", "--format", "table")
++
++        self.assertEqual(json_exit, 0)
++        self.assertEqual(json.loads(json_output)["run_id"], "run-ok")
++        self.assertEqual(csv_exit, 0)
++        self.assertIn("run_id,label,task_success,data_integrity_pass", csv_output)
++        self.assertEqual(table_exit, 0)
++        self.assertIn("run_status", table_output)
++
++        with tempfile.TemporaryDirectory() as tmp:
++            write_report(tmp, make_report(run_id="run-failed", status="failed"))
++            strict_exit, _ = run_cli("summary", "--output-root", tmp, "run-failed", "--strict")
++
++        self.assertEqual(strict_exit, 1)
++
++    def test_aggregate_cli_handles_empty_dir_and_missing_report(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            empty_exit, empty_output = run_cli("aggregate", "--runs-root", tmp, "--format", "json")
++            self.assertEqual(empty_exit, 0)
++            self.assertEqual(json.loads(empty_output)["run_count"], 0)
++
++            write_report(tmp, make_report(run_id="run-ok", label="keep"))
++            (Path(tmp) / "missing-report").mkdir()
++            agg_exit, agg_output = run_cli(
++                "aggregate",
++                "--runs-root",
++                tmp,
++                "--label",
++                "keep",
++                "--format",
++                "json",
++            )
++
++        aggregate = json.loads(agg_output)
++        self.assertEqual(agg_exit, 0)
++        self.assertEqual(aggregate["run_count"], 1)
++        self.assertEqual(len(aggregate["skipped_runs"]), 1)
++
++    def test_aggregate_cli_csv_table_and_strict(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            write_report(tmp, make_report(run_id="run-ok"))
++            write_report(tmp, make_report(run_id="run-bad", status="failed"))
++
++            csv_exit, csv_output = run_cli("aggregate", "--runs-root", tmp, "--format", "csv")
++            table_exit, table_output = run_cli("aggregate", "--runs-root", tmp, "--format", "table")
++            strict_exit, _ = run_cli("aggregate", "--runs-root", tmp, "--strict")
++
++        self.assertEqual(csv_exit, 0)
++        self.assertIn("run_count,success_count,failure_count", csv_output)
++        self.assertEqual(table_exit, 0)
++        self.assertIn("success_rate", table_output)
++        self.assertEqual(strict_exit, 1)
++
++
++def run_cli(*args: str) -> tuple[int, str]:
++    stdout = io.StringIO()
++    with redirect_stdout(stdout):
++        exit_code = agentmon_main(list(args))
++    return exit_code, stdout.getvalue()
++
++
++def write_report(root: str, report: dict) -> Path:
++    run_dir = Path(root) / report["run_id"]
++    run_dir.mkdir()
++    (run_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
++    return run_dir
++
++
++def make_report(
++    *,
++    run_id: str = "run-1",
++    label: str | None = "calculator",
++    status: str = "success",
++    duration_s: float = 10.0,
++    prefix_status: str = "enabled",
++    prompt_tokens=100,
++    generation_tokens=50,
++    pss=4096,
++    kv=0.4,
++) -> dict:
++    prefix_hit_rate = 0.75 if prefix_status == "enabled" else None
++    return {
++        "schema_version": "1.0",
++        "run_id": run_id,
++        "status": status,
++        "exit_code": 0 if status == "success" else 1,
++        "duration_s": duration_s,
++        "manifest": {
++            "run_id": run_id,
++            "label": label,
++            "status": status,
++            "prefix_caching_status": prefix_status,
++            "start_wall_ns": 1_700_000_000_000_000_000,
++        },
++        "data_quality": {"proc": "complete", "vllm": "complete", "npu": "complete", "trajectory": "complete"},
++        "agent": {
++            "exit_status": "submitted",
++            "mini_version": "2.4.3",
++            "api_calls": 2,
++            "assistant_turns": 3,
++            "prompt_tokens": prompt_tokens,
++            "completion_tokens": generation_tokens,
++            "cached_tokens": 7,
++            "instance_cost": 0.12,
++        },
++        "event_log": {
++            "jsonl_invalid_count": 0,
++            "duplicate_event_ids": 0,
++            "p0_jsonl_sqlite_difference": 0,
++            "event_count_mismatch": False,
++        },
++        "p1_spans": {
++            "agent_steps": 2,
++            "model_requests": 2,
++            "tool_calls": 2,
++            "open_span_count": 0,
++            "abandoned_span_count": 0,
++            "orphan_end_count": 0,
++            "negative_duration_count": 0,
++            "spans": [
++                {"span_type": "model_request", "status": "success", "duration_s": 0.1},
++                {"span_type": "model_request", "status": "success", "duration_s": 0.3},
++                {"span_type": "tool_call", "status": "success", "duration_s": 1.0},
++                {"span_type": "tool_call", "status": "failed", "duration_s": 2.0},
++            ],
++        },
++        "tool_attribution": {
++            "tool_calls": 2,
++            "tool_failures": 1,
++            "tools": [{"returncode": 0}, {"returncode": 2}],
++        },
++        "proc": {"agent_peak_pss_bytes": pss, "agent_peak_rss_bytes": 8192 if pss is not None else None},
++        "kv_cache": {
++            "prefix_cache_status": prefix_status,
++            "prefix_cache_hit_rate": prefix_hit_rate,
++            "prefix_cache_hit_rate_quality": "sampled" if prefix_status == "enabled" else "disabled",
++            "kv_cache_usage_ratio_max": kv,
++        },
++        "vllm": {
++            "counter_deltas": {
++                "vllm:request_success_total": 4,
++                "vllm:preemption_total": 1,
++            }
++        },
++        "ascend": {
++            "status": "complete",
++            "parser_confidence": 0.9,
++            "devices": {"0": {"peak_hbm_used_bytes": 123, "max_aicore_util_pct": 80.0}},
++        },
++    }

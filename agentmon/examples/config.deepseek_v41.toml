@@ -1,0 +1,48 @@
+# Client/P0/P1 profile, not a server launcher or P2 compatibility declaration.
+# All server paths are supplied by the caller/environment.
+[agent]
+type = "mini-swe"
+env_unset = ["PYTHONPATH", "PYTHONHOME"]
+env_set = [
+  "PYTHONPATH=${AGENTMON_REPO}/src",
+  "PYTHONNOUSERSITE=1",
+  "NO_PROXY=127.0.0.1,localhost,::1",
+  "no_proxy=127.0.0.1,localhost,::1",
+  "MSWEA_CONFIGURED=1",
+  "MSWEA_COST_TRACKING=ignore_errors",
+  "OPENAI_API_KEY=not-needed",
+  "LITELLM_LOCAL_MODEL_COST_MAP=true",
+  "LITELLM_MODEL_REGISTRY_PATH=${AGENTMON_REPO}/examples/models/deepseek_v41_registry.json",
+]
+
+[vllm]
+metrics_url = "http://127.0.0.1:8800/metrics"
+api_base = "http://127.0.0.1:8800/v1"
+models_url = "http://127.0.0.1:8800/v1/models"
+model_name = "deepseek-v41"
+process_match = ["VLLM::EngineCore", "VLLM::Worker_TP"]
+request_timeout_seconds = 2.0
+# A client profile cannot enable server-side caching.
+prefix_caching = "unknown"
+
+[model]
+dtype = "bfloat16"
+max_model_len = 262144
+tensor_parallel_size = 8
+max_num_seqs = 1
+
+[context_compression]
+# First smoke isolates client compatibility. Test summary requests separately.
+enabled = false
+window_tokens = 0
+
+[runtime_optimization]
+enabled = false
+
+[finalization]
+p2_events_path = ""
+
+[privacy]
+store_prompts = false
+store_tool_output = false
+store_full_command = false

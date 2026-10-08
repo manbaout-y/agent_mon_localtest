@@ -1,0 +1,384 @@
+diff --git a/src/agentmon/adapters/vllm_018/hook.py b/src/agentmon/adapters/vllm_018/hook.py
+index 8911a45..0526030 100644
+--- a/src/agentmon/adapters/vllm_018/hook.py
++++ b/src/agentmon/adapters/vllm_018/hook.py
+@@ -4,6 +4,7 @@ import asyncio
+ import functools
+ import importlib
+ import os
++import threading
+ import time
+ from typing import Any, Callable
+ 
+@@ -15,6 +16,7 @@ ENABLE_ENV = "AGENTMON_VLLM_P2_ENABLE"
+ HOT_PATH_ENV = "AGENTMON_VLLM_P2_HOOK_GET_COMPUTED_BLOCKS"
+ INSTALLED_ATTR = "__agentmon_p2_wrapped__"
+ ORIGINAL_ATTR = "__agentmon_p2_original__"
++MAX_REQUEST_ID_ALIASES = 4096
+ 
+ _INSTALLED = False
+ _STATE: "VllmP2HookState | None" = None
+@@ -30,6 +32,8 @@ class VllmP2HookState:
+         self.seen_first_token: set[str] = set()
+         self.seen_finished: set[str] = set()
+         self.scheduler_stats_depth = 0
++        self._request_id_aliases: dict[str, str] = {}
++        self._request_id_alias_lock = threading.Lock()
+ 
+     def emit_error(self, exc: BaseException, where: str) -> None:
+         try:
+@@ -43,6 +47,40 @@ class VllmP2HookState:
+         except Exception:
+             pass
+ 
++    def record_request_id_alias(self, alias_request_id: Any, engine_request_id: Any) -> None:
++        alias = none_if_empty(alias_request_id)
++        engine_id = none_if_empty(engine_request_id)
++        if alias is None or engine_id is None or alias == engine_id:
++            return
++        with self._request_id_alias_lock:
++            self._request_id_aliases[alias] = engine_id
++            while len(self._request_id_aliases) > MAX_REQUEST_ID_ALIASES:
++                self._request_id_aliases.pop(next(iter(self._request_id_aliases)))
++
++    def resolve_engine_request_id(self, *candidates: Any) -> tuple[str | None, str | None]:
++        normalized = [item for candidate in candidates for item in as_request_ids(candidate)]
++        if not normalized:
++            return None, None
++        with self._request_id_alias_lock:
++            for candidate in normalized:
++                engine_id = self._request_id_aliases.get(candidate)
++                if engine_id is not None:
++                    return engine_id, candidate if candidate != engine_id else None
++        engine_id = normalized[0]
++        for candidate in normalized[1:]:
++            if candidate != engine_id:
++                return engine_id, candidate
++        return engine_id, None
++
++    def clear_request_ids(self, *request_ids: Any) -> None:
++        ids = {item for request_id in request_ids for item in as_request_ids(request_id)}
++        if not ids:
++            return
++        with self._request_id_alias_lock:
++            for alias, engine_id in list(self._request_id_aliases.items()):
++                if alias in ids or engine_id in ids:
++                    self._request_id_aliases.pop(alias, None)
++
+ 
+ def install_from_env() -> dict[str, Any]:
+     if not truthy(os.environ.get(ENABLE_ENV)):
+@@ -183,7 +221,9 @@ def wrap_async_add_request(state: VllmP2HookState) -> Callable[[Callable[..., An
+         async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+             received_ns = time.monotonic_ns()
+             result = await original(self, *args, **kwargs)
+-            request_id = getattr(result, "request_id", None) or request_id_from_call(args, kwargs)
++            call_request_id = request_id_from_call(args, kwargs)
++            request_id = getattr(result, "request_id", None) or call_request_id
++            state.record_request_id_alias(call_request_id, request_id)
+             emit_received(
+                 state,
+                 request_id=request_id,
+@@ -219,6 +259,8 @@ def wrap_async_generate(state: VllmP2HookState) -> Callable[[Callable[..., Any]]
+             except (asyncio.CancelledError, GeneratorExit):
+                 emit_cancelled(state, request_id, agent_request_id=agent_request_id)
+                 raise
++            finally:
++                state.clear_request_ids(request_id)
+ 
+         return wrapper
+ 
+@@ -248,9 +290,12 @@ def wrap_llm_add_request(state: VllmP2HookState) -> Callable[[Callable[..., Any]
+         def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+             received_ns = time.monotonic_ns()
+             result = original(self, *args, **kwargs)
++            call_request_id = request_id_from_call(args, kwargs)
++            request_id = str(result) if result is not None else call_request_id
++            state.record_request_id_alias(call_request_id, request_id)
+             emit_received(
+                 state,
+-                request_id=str(result) if result is not None else request_id_from_call(args, kwargs),
++                request_id=request_id,
+                 agent_request_id=agent_request_id_from_headers(kwargs.get("trace_headers")),
+                 received_ns=received_ns,
+                 model_name=model_name_from_engine(self),
+@@ -484,7 +529,8 @@ def observe_request_output(
+     agent_request_id: str | None = None,
+     fallback_request_id: str | None = None,
+ ) -> None:
+-    req_id = none_if_empty(getattr(output, "request_id", None) or fallback_request_id)
++    output_request_id = none_if_empty(getattr(output, "request_id", None))
++    req_id, api_request_id = state.resolve_engine_request_id(fallback_request_id, output_request_id)
+     if req_id is None:
+         return
+     generation_tokens = generation_token_count(output)
+@@ -502,20 +548,24 @@ def observe_request_output(
+         )
+     if bool(getattr(output, "finished", False)) and req_id not in state.seen_finished:
+         state.seen_finished.add(req_id)
++        payload = {
++            "agent_request_id": agent_request_id,
++            "vllm_request_id": req_id,
++            "correlation_quality": "direct" if agent_request_id else "server_generated",
++            "finished_ns": time.monotonic_ns(),
++            "finish_reason": finish_reason_from_output(output),
++            "prompt_tokens": prompt_token_count(output),
++            "cached_prompt_tokens": numeric_or_none(getattr(output, "num_cached_tokens", None)),
++            "generation_tokens": generation_tokens,
++        }
++        if api_request_id is not None:
++            payload["api_request_id"] = api_request_id
+         emit_request_payload(
+             state,
+             "vllm.request.finished",
+-            {
+-                "agent_request_id": agent_request_id,
+-                "vllm_request_id": req_id,
+-                "correlation_quality": "direct" if agent_request_id else "server_generated",
+-                "finished_ns": time.monotonic_ns(),
+-                "finish_reason": finish_reason_from_output(output),
+-                "prompt_tokens": prompt_token_count(output),
+-                "cached_prompt_tokens": numeric_or_none(getattr(output, "num_cached_tokens", None)),
+-                "generation_tokens": generation_tokens,
+-            },
++            payload,
+         )
++        state.clear_request_ids(req_id, output_request_id, fallback_request_id)
+ 
+ 
+ def observe_engine_core_outputs(state: VllmP2HookState, outputs: Any) -> None:
+@@ -623,18 +673,25 @@ def emit_scheduler_kv_config(state: VllmP2HookState, scheduler: Any) -> None:
+ 
+ 
+ def emit_cancelled(state: VllmP2HookState, request_id: Any, *, agent_request_id: str | None = None) -> None:
+-    for req_id in as_request_ids(request_id):
++    for raw_request_id in as_request_ids(request_id):
++        req_id, api_request_id = state.resolve_engine_request_id(raw_request_id)
++        if req_id is None:
++            continue
++        payload = {
++            "agent_request_id": agent_request_id,
++            "vllm_request_id": req_id,
++            "correlation_quality": "direct" if agent_request_id else "server_generated",
++            "finished_ns": time.monotonic_ns(),
++            "finish_reason": "cancelled",
++        }
++        if api_request_id is not None:
++            payload["api_request_id"] = api_request_id
+         emit_request_payload(
+             state,
+             "vllm.request.cancelled",
+-            {
+-                "agent_request_id": agent_request_id,
+-                "vllm_request_id": req_id,
+-                "correlation_quality": "direct" if agent_request_id else "server_generated",
+-                "finished_ns": time.monotonic_ns(),
+-                "finish_reason": "cancelled",
+-            },
++            payload,
+         )
++        state.clear_request_ids(raw_request_id, req_id)
+ 
+ 
+ def emit_request_payload(state: VllmP2HookState, event_type: str, payload: dict[str, Any]) -> None:
+diff --git a/tests/unit/test_p2_vllm_adapter.py b/tests/unit/test_p2_vllm_adapter.py
+index 3800c3a..18c3be0 100644
+--- a/tests/unit/test_p2_vllm_adapter.py
++++ b/tests/unit/test_p2_vllm_adapter.py
+@@ -1,5 +1,6 @@
+ import json
+ import asyncio
++import os
+ import sys
+ import tempfile
+ import types
+@@ -297,6 +298,165 @@ class P2VllmAdapterTests(unittest.TestCase):
+         self.assertIsNone(no_sample["prefix_cache_hit_rate"])
+         self.assertEqual(no_sample["prefix_cache_hit_rate_quality"], "unavailable")
+ 
++    def test_request_lifecycle_keeps_engine_id_when_api_response_id_differs(self) -> None:
++        engine_request_id = "chatcmpl-abc123-deadbeef"
++        api_request_id = "chatcmpl-abc123"
++
++        class Engine:
++            async def add_request(self, request_id: str, *args: object, **kwargs: object) -> object:
++                return types.SimpleNamespace(request_id=engine_request_id)
++
++            async def generate(self, *args: object, request_id: str, trace_headers: object = None, **kwargs: object) -> object:
++                await self.add_request(request_id, trace_headers=trace_headers)
++                yield FakeRequestOutput(api_request_id)
++
++        with tempfile.TemporaryDirectory() as tmp:
++            events_path = Path(tmp) / "events.jsonl"
++            sink = VllmP2EventSink(run_id="run-lifecycle", events_path=events_path)
++            state = p2_hook.VllmP2HookState(sink=sink)
++            Engine.add_request = p2_hook.wrap_async_add_request(state)(Engine.add_request)
++            Engine.generate = p2_hook.wrap_async_generate(state)(Engine.generate)
++            try:
++                p2_hook.emit_queued_from_request(state, FakeRequest(engine_request_id))
++                p2_hook.observe_scheduler_output(state, scheduler_output_for(engine_request_id))
++
++                async def consume() -> None:
++                    async for _ in Engine().generate(request_id=api_request_id):
++                        pass
++
++                asyncio.run(consume())
++            finally:
++                sink.close()
++
++            rows = read_event_rows(events_path)
++
++        payloads = {
++            row["event_type"]: row["payload"]
++            for row in rows
++            if row["event_type"]
++            in {
++                "vllm.request.received",
++                "vllm.request.queued",
++                "vllm.request.first_scheduled",
++                "vllm.request.finished",
++            }
++        }
++        self.assertEqual(payloads["vllm.request.received"]["vllm_request_id"], engine_request_id)
++        self.assertEqual(payloads["vllm.request.queued"]["vllm_request_id"], engine_request_id)
++        self.assertEqual(payloads["vllm.request.first_scheduled"]["vllm_request_id"], engine_request_id)
++        self.assertEqual(payloads["vllm.request.finished"]["vllm_request_id"], engine_request_id)
++        self.assertEqual(payloads["vllm.request.finished"]["api_request_id"], api_request_id)
++
++    def test_request_id_aliases_do_not_cross_interleaved_requests(self) -> None:
++        pairs = [
++            ("chatcmpl-a", "chatcmpl-a-11111111"),
++            ("chatcmpl-b", "chatcmpl-b-22222222"),
++        ]
++
++        with tempfile.TemporaryDirectory() as tmp:
++            events_path = Path(tmp) / "events.jsonl"
++            sink = VllmP2EventSink(run_id="run-interleaved", events_path=events_path)
++            state = p2_hook.VllmP2HookState(sink=sink)
++            try:
++                for api_id, engine_id in pairs:
++                    state.record_request_id_alias(api_id, engine_id)
++                    p2_hook.emit_queued_from_request(state, FakeRequest(engine_id))
++                p2_hook.observe_scheduler_output(state, scheduler_output_for(pairs[1][1]))
++                p2_hook.observe_scheduler_output(state, scheduler_output_for(pairs[0][1]))
++                p2_hook.observe_request_output(state, FakeRequestOutput(pairs[1][0]), fallback_request_id=pairs[1][0])
++                p2_hook.observe_request_output(state, FakeRequestOutput(pairs[0][0]), fallback_request_id=pairs[0][0])
++            finally:
++                sink.close()
++
++            rows = read_event_rows(events_path)
++
++        finished_by_api_id = {
++            row["payload"].get("api_request_id"): row["payload"].get("vllm_request_id")
++            for row in rows
++            if row["event_type"] == "vllm.request.finished"
++        }
++        self.assertEqual(finished_by_api_id["chatcmpl-a"], "chatcmpl-a-11111111")
++        self.assertEqual(finished_by_api_id["chatcmpl-b"], "chatcmpl-b-22222222")
++
++    def test_request_id_aliases_clean_up_after_abort_and_generate_exception(self) -> None:
++        class Aborter:
++            async def abort(self, request_id: str) -> str:
++                return "aborted"
++
++        class ErrorEngine:
++            async def add_request(self, request_id: str, *args: object, **kwargs: object) -> object:
++                return types.SimpleNamespace(request_id="chatcmpl-error-feedface")
++
++            async def generate(self, *args: object, request_id: str, **kwargs: object) -> object:
++                await self.add_request(request_id)
++                raise RuntimeError("boom")
++                yield FakeRequestOutput(request_id)
++
++        with tempfile.TemporaryDirectory() as tmp:
++            events_path = Path(tmp) / "events.jsonl"
++            sink = VllmP2EventSink(run_id="run-cleanup", events_path=events_path)
++            state = p2_hook.VllmP2HookState(sink=sink)
++            Aborter.abort = p2_hook.wrap_async_abort(state)(Aborter.abort)
++            ErrorEngine.add_request = p2_hook.wrap_async_add_request(state)(ErrorEngine.add_request)
++            ErrorEngine.generate = p2_hook.wrap_async_generate(state)(ErrorEngine.generate)
++            try:
++                state.record_request_id_alias("chatcmpl-abort", "chatcmpl-abort-deadbeef")
++                self.assertEqual(asyncio.run(Aborter().abort("chatcmpl-abort")), "aborted")
++                p2_hook.observe_request_output(
++                    state,
++                    FakeRequestOutput("chatcmpl-abort"),
++                    fallback_request_id="chatcmpl-abort",
++                )
++
++                async def consume_error() -> None:
++                    async for _ in ErrorEngine().generate(request_id="chatcmpl-error"):
++                        pass
++
++                with self.assertRaises(RuntimeError):
++                    asyncio.run(consume_error())
++                p2_hook.observe_request_output(
++                    state,
++                    FakeRequestOutput("chatcmpl-error"),
++                    fallback_request_id="chatcmpl-error",
++                )
++            finally:
++                sink.close()
++
++            rows = read_event_rows(events_path)
++
++        cancelled = next(row for row in rows if row["event_type"] == "vllm.request.cancelled")
++        self.assertEqual(cancelled["payload"]["vllm_request_id"], "chatcmpl-abort-deadbeef")
++        self.assertEqual(cancelled["payload"]["api_request_id"], "chatcmpl-abort")
++        finished = [
++            row["payload"]["vllm_request_id"]
++            for row in rows
++            if row["event_type"] == "vllm.request.finished"
++        ]
++        self.assertIn("chatcmpl-abort", finished)
++        self.assertIn("chatcmpl-error", finished)
++        self.assertNotIn("chatcmpl-abort-deadbeef", finished)
++        self.assertNotIn("chatcmpl-error-feedface", finished)
++
++    def test_runtime_hook_disabled_env_has_no_events_or_state(self) -> None:
++        old_enable = os.environ.pop("AGENTMON_VLLM_P2_ENABLE", None)
++        old_events_path = os.environ.get("AGENTMON_EVENTS_PATH")
++        with tempfile.TemporaryDirectory() as tmp:
++            events_path = Path(tmp) / "events.jsonl"
++            os.environ["AGENTMON_EVENTS_PATH"] = str(events_path)
++            try:
++                p2_hook.uninstall_for_tests()
++                result = p2_hook.install_from_env()
++                self.assertEqual(result["status"], "disabled")
++                self.assertFalse(events_path.exists())
++                self.assertIsNone(p2_hook._STATE)
++            finally:
++                if old_enable is not None:
++                    os.environ["AGENTMON_VLLM_P2_ENABLE"] = old_enable
++                if old_events_path is None:
++                    os.environ.pop("AGENTMON_EVENTS_PATH", None)
++                else:
++                    os.environ["AGENTMON_EVENTS_PATH"] = old_events_path
++
+     def test_runtime_hook_patches_real_v1_targets_and_preserves_return_values(self) -> None:
+         fake_module_names = install_fake_vllm_modules()
+         with tempfile.TemporaryDirectory() as tmp:
+@@ -412,6 +572,23 @@ def build_report_from_events(rows: list[dict[str, object]]) -> dict[str, object]
+         return build_report(run_dir)
+ 
+ 
++def read_event_rows(events_path: Path) -> list[dict[str, object]]:
++    return [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
++
++
++def scheduler_output_for(request_id: str) -> object:
++    return types.SimpleNamespace(
++        scheduled_new_reqs=[
++            types.SimpleNamespace(
++                req_id=request_id,
++                prompt_token_ids=[1, 2, 3],
++                num_computed_tokens=0,
++            )
++        ],
++        preempted_req_ids=[],
++    )
++
++
+ def build_p2_kv_report(
+     *,
+     prefix_cache_status: str,

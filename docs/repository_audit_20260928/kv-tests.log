@@ -1,0 +1,78 @@
+...................................................F.................... [ 21%]
+........................................................................ [ 43%]
+..........F......F...................................................... [ 64%]
+........................................................................ [ 86%]
+.............................................                            [100%]
+================================== FAILURES ===================================
+__________ test_paper_capability_audit_is_20_unique_and_conservative __________
+
+    def test_paper_capability_audit_is_20_unique_and_conservative() -> None:
+        rows = audit_paper_capabilities(ROOT)
+        assert len(rows) == 20
+        assert len({row["paper_id"] for row in rows}) == 20
+        by_id = {row["paper_id"]: row for row in rows}
+>       assert by_id["14"]["classification"] == "OFFLINE_COMPONENT_EXECUTABLE"
+E       AssertionError: assert 'BLOCKED_SOURCE' == 'OFFLINE_COMPONENT_EXECUTABLE'
+E         - OFFLINE_COMPONENT_EXECUTABLE
+E         + BLOCKED_SOURCE
+
+tests\test_real_offline_pipeline.py:23: AssertionError
+________ test_v41_catalog_is_unverified_and_v4_points_to_local_source _________
+
+    def test_v41_catalog_is_unverified_and_v4_points_to_local_source():
+        requirements = capture_requirements()
+        assert requirements["DeepSeek-V4.1"]["status"] == "REQUIRES_RUNTIME_SCHEMA"
+        root = Path(__file__).resolve().parents[1]
+>       source = (root / requirements["DeepSeek-V4"]["evidence_file"]).read_text()
+
+tests\test_state_research_contract.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/official/vllm-ascend/vllm_ascend/attention/dsa_v1.py')
+encoding = 'locale', errors = None
+
+    def read_text(self, encoding=None, errors=None):
+        """
+        Open the file in text mode, read it, and close the file.
+        """
+        encoding = io.text_encoding(encoding)
+        with self.open(mode='r', encoding=encoding, errors=errors) as f:
+>           return f.read()
+E           UnicodeDecodeError: 'gbk' codec can't decode byte 0xa5 in position 115391: illegal multibyte sequence
+
+F:\Anaconda\lib\pathlib.py:1135: UnicodeDecodeError
+________ test_cli_outputs_are_separated_and_existing_output_protected _________
+
+tmp_path = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/docs/repository_audit_20260928/pytest-tmp/test_cli_outputs_are_separated0')
+
+    def test_cli_outputs_are_separated_and_existing_output_protected(tmp_path):
+        source, output = tmp_path / "input.json", tmp_path / "out"
+        source.write_text(json.dumps(synthetic_records(), ensure_ascii=False))
+>       assert main(["--input", str(source), "--output", str(output), "--dataset-id", "test"]) == 0
+
+tests\test_state_research_contract.py:161: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\kvreuse_b5\state_research\prepare.py:129: in main
+    records = load_records(args.input)
+src\kvreuse_b5\state_research\io.py:9: in load_records
+    text = Path(path).read_text(encoding="utf-8")
+F:\Anaconda\lib\pathlib.py:1135: in read_text
+    return f.read()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <encodings.utf_8.IncrementalDecoder object at 0x0000022A7A025120>
+input = b'[{"question_id": "q0", "conversation_id": "synthetic-session", "query": "QUERY 0", "results": [{"content": "AA", "me...etic", "text_scope": "full_prompt"}, "agentmon": {"agent_run_id": "synthetic-agent", "model_request_id": "model-4"}}}]'
+final = True
+
+    def decode(self, input, final=False):
+        # decode input (taking the buffer into account)
+        data = self.buffer + input
+>       (result, consumed) = self._buffer_decode(data, self.errors, final)
+E       UnicodeDecodeError: 'utf-8' codec can't decode byte 0xb9 in position 183: invalid start byte
+
+F:\Anaconda\lib\codecs.py:322: UnicodeDecodeError
+=========================== short test summary info ===========================
+FAILED tests/test_real_offline_pipeline.py::test_paper_capability_audit_is_20_unique_and_conservative
+FAILED tests/test_state_research_contract.py::test_v41_catalog_is_unverified_and_v4_points_to_local_source
+FAILED tests/test_state_research_contract.py::test_cli_outputs_are_separated_and_existing_output_protected
+3 failed, 330 passed in 3.68s

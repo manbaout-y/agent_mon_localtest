@@ -1,0 +1,108 @@
+diff --git a/src/agentmon/adapters/mini_swe/environment.py b/src/agentmon/adapters/mini_swe/environment.py
+index 857eb95..647b7ae 100644
+--- a/src/agentmon/adapters/mini_swe/environment.py
++++ b/src/agentmon/adapters/mini_swe/environment.py
+@@ -303,7 +303,7 @@ class MiniSweLocalExecutionMixin:
+                 }
+                 checker = getattr(self, "_check_finished", None)
+                 if callable(checker):
+-                    checker(output)
++                    checker(result)
+         except Exception as exc:
+             exception_info = f"{type(exc).__name__}: {exc}"
+             raise
+diff --git a/tests/unit/test_p1_adapters.py b/tests/unit/test_p1_adapters.py
+index ff808e3..5bb8278 100644
+--- a/tests/unit/test_p1_adapters.py
++++ b/tests/unit/test_p1_adapters.py
+@@ -1,11 +1,16 @@
+ import json
++from types import SimpleNamespace
+ import tempfile
+ import unittest
+ from pathlib import Path
+ 
+ from agentmon.adapters.mini_swe.agent import InstrumentedAgentMixin
+ from agentmon.adapters.mini_swe.context import AgentMonContext
+-from agentmon.adapters.mini_swe.environment import InstrumentedEnvironment, InstrumentedLocalEnvironment
++from agentmon.adapters.mini_swe.environment import (
++    InstrumentedEnvironment,
++    InstrumentedLocalEnvironment,
++    MiniSweLocalExecutionMixin,
++)
+ from agentmon.adapters.mini_swe.event_sink import AdapterEventSink
+ from agentmon.adapters.mini_swe.model import InstrumentedModel
+ 
+@@ -57,6 +62,23 @@ class FakeInstrumentedAgent(InstrumentedAgentMixin, BaseAgent):
+     pass
+ 
+ 
++class FakeMiniSweLocalEnvironment(MiniSweLocalExecutionMixin):
++    def __init__(self, tmp: str, sink: AdapterEventSink) -> None:
++        self.config = SimpleNamespace(cwd=tmp, env={}, timeout=5)
++        self.agentmon_sink = sink
++        self.checked_result = None
++
++    def _check_finished(self, output):
++        output.get("output", "")
++        self.checked_result = output
++
++
++class FakeMiniSweLocalEnvironmentWithFailingChecker(FakeMiniSweLocalEnvironment):
++    def _check_finished(self, output):
++        self.checked_result = output
++        raise RuntimeError("checker stopped execution")
++
++
+ class P1AdapterTests(unittest.TestCase):
+     def make_sink(self, tmp: str) -> AdapterEventSink:
+         context = AgentMonContext(
+@@ -148,6 +170,48 @@ class P1AdapterTests(unittest.TestCase):
+             self.assertEqual(tool_end["payload"]["stdout_bytes"], 2)
+             self.assertEqual(tool_end["payload"]["attribution_quality"], "exact_pid_boundary")
+ 
++    def test_mini_swe_local_environment_passes_result_mapping_to_checker(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            sink = self.make_sink(tmp)
++            env = FakeMiniSweLocalEnvironment(tmp, sink)
++
++            result = env.execute({"command": "printf hi"})
++            sink.close()
++
++            self.assertIs(env.checked_result, result)
++            self.assertEqual(result["output"], "hi")
++            self.assertEqual(result["returncode"], 0)
++            self.assertEqual(result["exception_info"], "")
++            events = self.read_events(tmp)
++            event_types = [event["event_type"] for event in events]
++            self.assertIn("tool_call.end", event_types)
++            self.assertNotIn("tool_call.error", event_types)
++            tool_start = next(event for event in events if event["event_type"] == "tool_call.start")
++            process_start = next(event for event in events if event["event_type"] == "tool_call.process_start")
++            tool_end = next(event for event in events if event["event_type"] == "tool_call.end")
++            self.assertIn("command_hash", tool_start["payload"])
++            self.assertIsInstance(process_start["payload"]["pid"], int)
++            self.assertIsInstance(process_start["payload"]["pgid"], int)
++            self.assertIsInstance(tool_end["payload"]["pid"], int)
++            self.assertIsInstance(tool_end["payload"]["pgid"], int)
++            self.assertIn("pid_starttime_ticks", tool_end["payload"])
++            self.assertEqual(tool_end["payload"]["output_bytes"], 2)
++            self.assertFalse(tool_end["payload"]["timed_out"])
++            self.assertEqual(tool_end["payload"]["returncode"], 0)
++
++    def test_mini_swe_local_environment_preserves_checker_exception(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            sink = self.make_sink(tmp)
++            env = FakeMiniSweLocalEnvironmentWithFailingChecker(tmp, sink)
++
++            with self.assertRaisesRegex(RuntimeError, "checker stopped execution"):
++                env.execute({"command": "printf hi"})
++            sink.close()
++
++            self.assertIsInstance(env.checked_result, dict)
++            events = self.read_events(tmp)
++            self.assertIn("tool_call.error", [event["event_type"] for event in events])
++
+     def test_agent_mixin_emits_spans_and_adds_serialize_metadata(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+             sink = self.make_sink(tmp)

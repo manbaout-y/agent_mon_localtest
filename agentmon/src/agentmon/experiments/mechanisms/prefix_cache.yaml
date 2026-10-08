@@ -1,0 +1,33 @@
+name: prefix_cache
+description: Inference-service prefix cache mechanism observed through P2 request/cache events.
+
+allowed_execution_paths:
+  - runtime_controlled_model
+  - direct_model_endpoint
+  - runtime_service
+
+allowed_config_differences:
+  - prefix_cache.*
+  - vllm.prefix_cache.*
+  - runtime_model.*
+
+activation_event_types:
+  - vllm.request.prompt_cache_accounted
+  - vllm.kv.snapshot
+
+negative_reason_paths:
+  - payload.prefix_cache_status
+
+negative_reasons:
+  - disabled
+  - UNAVAILABLE
+  - UNKNOWN
+
+forbidden_conclusions:
+  - prefix cache events do not prove generated-token throughput improvement.
+  - total prompt tokens must not be treated as actual Prefill tokens.
+
+required_config:
+
+coverage:
+  min_count: 1

@@ -1,0 +1,4989 @@
+diff --git a/README.md b/README.md
+index 2c4b69d..90b2e4e 100644
+--- a/README.md
++++ b/README.md
+@@ -13,13 +13,31 @@ It provides:
+ - `agentmon compare <run-id-a> <run-id-b>`
+ - `agentmon import-trajectory <path.traj.json>`
+ - `agentmon export <run-id> --format json|csv`
++- `agentmon summary <run-id> --format table|json|csv`
++- `agentmon aggregate ... --format table|json|csv`
++- `agentmon experiment plan prefix-cache ...`
+ - JSONL + SQLite event storage
+ - host/procfs, vLLM `/metrics`, Ascend `npu-smi`, and mini-SWE trajectory ingestion
+ - optional P1 mini-SWE model/agent/environment class-path adapters
+ - JSON/text/CSV run reports
+ 
+-It intentionally does not implement P2/P3 adapters: no vLLM plugin, no
+-profiler control, and no request-level KV cache tracing.
++It intentionally does not load a P2 vLLM runtime plugin or P3 profiler control
++by default. P2 report/summary contracts and an opt-in vLLM `0.18.0` runtime
++hook are present, but the hook should be enabled only for a separately launched
++validation service.
++The P2 requirements are tracked separately in `docs/p2_vllm_adapter.md`.
++
++P2 discovery must be run with the same environment used to launch the target
++vLLM service. In particular, do not remove CANN/ACL library variables such as
++`LD_LIBRARY_PATH` or `ASCEND_HOME_PATH` when checking `vllm_ascend` imports.
++The discovery JSON includes `hook_resolution_inputs`; only successful modules,
++successful objects, and actual package-scan candidates should be used for hook
++binding. Failed legacy probe paths are diagnostics, not hook targets.
++
++The P2 runtime hook is disabled unless `AGENTMON_VLLM_P2_ENABLE=1` is present
++in the vLLM service environment. It version-gates on vLLM `0.18.0`, preserves
++vLLM return values/exceptions, and emits adapter errors instead of failing
++requests when observation code fails.
+ 
+ ## Server Paths
+ 
+@@ -27,11 +45,11 @@ Use one fixed AgentMon Python environment. Do not install AgentMon into the
+ mini-SWE or vLLM environments.
+ 
+ ```bash
+-export AGENTMON_REPO=/data/node0_disk3/chenyang/agentmon-ascend
++export AGENTMON_REPO=/data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src
+ export AGENTMON_HOME=/data/node0_disk3/chenyang/agentmon
+ export AGENTMON_VENV=/data/node0_disk3/chenyang/agent-runtime-poc/envs/agentmon
+ export AGENTMON_PY=$AGENTMON_VENV/bin/python
+-export VLLM_PY=/data/node0_disk3/chenyang/agent-runtime-poc/envs/verl-cann90/bin/python3.11
++export VLLM_PY=/data/node0_disk3/chenyang/agent-runtime-poc/envs/verl-cann90/bin/python
+ 
+ export MINI_SWE_ROOT=/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe
+ export MINI_SWE_PY=/data/node0_disk3/chenyang/agent-runtime-poc/envs/mini-swe-v243/bin/python
+@@ -39,13 +57,27 @@ export MINI_SWE_BIN=/data/node0_disk3/chenyang/agent-runtime-poc/envs/mini-swe-v
+ export TARGET_REPO=/path/to/target/git/repository
+ ```
+ 
+-If the AgentMon checkout is elsewhere, change `AGENTMON_REPO`. The target
+-config uses `${AGENTMON_REPO}/src` for the child `PYTHONPATH`, and AgentMon
+-expands `${...}` from the environment while loading TOML.
++If the AgentMon checkout is elsewhere, change `AGENTMON_REPO` explicitly before
++running any command. Do not assume the P2 patch has already been applied to both
++`/data/node0_disk3/chenyang/agentmon-ascend` and
++`/data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src`. The target config
++uses `${AGENTMON_REPO}/src` for the child `PYTHONPATH`, and AgentMon expands
++`${...}` from the environment while loading TOML.
+ 
+ ## Offline Setup
+ 
+-Preferred installed mode:
++Use the existing AgentMon environment first. The current validation path is
++no-install mode with `PYTHONPATH`; it does not recreate or mutate the existing
++venv:
++
++```bash
++test -x "$AGENTMON_PY" || { echo "AgentMon Python does not exist"; exit 1; }
++"$AGENTMON_PY" -c 'import sys; print(sys.executable)'
++PYTHONPATH="$AGENTMON_REPO/src" "$AGENTMON_PY" -m agentmon --version
++```
++
++Do not rerun this on an already validated server environment unless you
++intentionally want to rebuild the AgentMon venv:
+ 
+ ```bash
+ "$VLLM_PY" -m venv "$AGENTMON_VENV"
+@@ -58,12 +90,6 @@ AgentMon venv. It does not install AgentMon into the vLLM environment. If you
+ already created and validated an older env such as `agentmon-p0`, you can keep
+ using it; the name is not semantically important.
+ 
+-No-install mode:
+-
+-```bash
+-PYTHONPATH="$AGENTMON_REPO/src" "$AGENTMON_PY" -m agentmon --version
+-```
+-
+ Do not allow the server to fall back to public PyPI. If editable install needs
+ build tooling that is not already present, use your internal wheelhouse or
+ internal pip index, or use the no-install `PYTHONPATH` mode.
+@@ -192,6 +218,212 @@ P1 still does not store prompt text, full shell commands, source code, or tool
+ stdout/stderr in AgentMon events by default. Command attribution uses hashes,
+ executable name, PID/PGID, and sampled proc counters.
+ 
++## Enable P2 vLLM Hooks
++
++P2 request/KV hooks are for a separately launched validation vLLM service. Do
++not inject them into an already-running production service, and do not restart
++the service currently serving `127.0.0.1:8000` just to test P2. The hook is
++loaded through `sitecustomize.py`, so the AgentMon `src` directory must be on
++the vLLM service `PYTHONPATH`, and the service plus EngineCore child processes
++must inherit the same environment.
++
++Launch the validation service from the same shell/script environment used by
++the working vLLM-Ascend service. A clean terminal that lacks CANN/ACL variables
++such as `LD_LIBRARY_PATH`, `ASCEND_HOME_PATH`, or the vLLM source checkout in
++`PYTHONPATH` is not sufficient.
++
++Preflight before enabling P2:
++
++```bash
++"$VLLM_PY" - <<'PY'
++import sys
++import vllm
++
++print("python:", sys.executable)
++print("vllm_version:", vllm.__version__)
++print("vllm_file:", vllm.__file__)
++
++import acl
++print("acl_file:", acl.__file__)
++
++import vllm_ascend
++print("vllm_ascend_file:", vllm_ascend.__file__)
++PY
++```
++
++Expected preflight facts:
++
++```text
++vllm_version: 0.18.0
++vllm_file: /data/node0_disk1/vllm/vllm/__init__.py
++acl import succeeds
++vllm_ascend import succeeds
++```
++
++If this preflight fails, do not start P2. Fix the validation service
++environment first.
++
++Hook target preflight:
++
++```bash
++"$VLLM_PY" - <<'PY'
++import importlib
++import inspect
++
++targets = [
++    ("vllm.v1.engine.async_llm", "AsyncLLMEngine", ["add_request", "generate", "abort"]),
++    ("vllm.v1.engine.llm_engine", "LLMEngine", ["add_request", "step"]),
++    ("vllm.v1.engine.core", "EngineCore", ["add_request", "step"]),
++    ("vllm.v1.core.sched.scheduler", "Scheduler", ["__init__", "add_request", "schedule", "make_stats"]),
++    ("vllm.v1.core.kv_cache_manager", "KVCacheManager", ["__init__", "make_prefix_cache_stats"]),
++]
++
++failed = False
++for module_name, class_name, methods in targets:
++    print(f"\n{module_name}.{class_name}")
++    try:
++        module = importlib.import_module(module_name)
++        cls = getattr(module, class_name)
++        print("CLASS_FILE:", inspect.getsourcefile(cls))
++    except Exception as exc:
++        failed = True
++        print("CLASS_ERROR:", type(exc).__name__, exc)
++        continue
++    for method_name in methods:
++        method = getattr(cls, method_name, None)
++        if method is None:
++            failed = True
++            print("MISSING_METHOD:", method_name)
++        else:
++            print("METHOD:", method_name, inspect.signature(method))
++
++raise SystemExit(1 if failed else 0)
++PY
++echo "HOOK_TARGET_CHECK_RC=$?"
++```
++
++Only start P2 when the target check exits `0`. If it fails, update the hook
++resolver and this target list from the actual service environment instead of
++falling back to legacy module paths.
++
++`sitecustomize.py` loader preflight:
++
++```bash
++find "$AGENTMON_REPO/src" -maxdepth 3 -type f \
++  \( -name 'sitecustomize.py' -o -iname '*vllm*' -o -iname '*p2*' \) \
++  -print
++
++env \
++  -u AGENTMON_VLLM_P2_ENABLE \
++  PYTHONPATH="$AGENTMON_REPO/src${PYTHONPATH:+:$PYTHONPATH}" \
++  PYTHONNOUSERSITE=1 \
++  "$VLLM_PY" -c \
++  'import sitecustomize; print("SITECUSTOMIZE_FILE=", sitecustomize.__file__)'
++```
++
++Expected result:
++
++```text
++SITECUSTOMIZE_FILE= /data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src/src/sitecustomize.py
++```
++
++If the path points to another project, P2 will not load according to this
++README.
++
++Validation service isolation:
++
++```bash
++npu-smi info
++ps -eo pid,ppid,cmd | grep -E '[v]llm|[a]pi_server'
++ss -ltnp | grep -E ':8000|:8001|:8002'
++```
++
++The validation service must use a different listening port and a free,
++non-overlapping NPU device set. Do not launch another TP=4 service on devices
++already used by the existing service. If no isolated devices are available, do
++not perform the runtime smoke test concurrently. Do not treat the `...` below
++as an executable command: copy the existing service's full launch arguments and
++change only the listening port, device selection, log path, optional served
++model name, and AgentMon P2 environment variables.
++
++Service-scoped P2 event stream setup:
++
++```bash
++umask 077
++
++export AGENTMON_RUN_ID=vllm-p2-smoke-$(date +%Y%m%d-%H%M%S)
++export AGENTMON_RUN_DIR="$AGENTMON_HOME/runs/$AGENTMON_RUN_ID"
++export AGENTMON_EVENTS_PATH="$AGENTMON_RUN_DIR/events.jsonl"
++
++mkdir -p -m 700 "$AGENTMON_RUN_DIR"
++chmod 700 "$AGENTMON_RUN_DIR"
++
++export PYTHONPATH="$AGENTMON_REPO/src${PYTHONPATH:+:$PYTHONPATH}"
++export PYTHONNOUSERSITE=1
++export AGENTMON_VLLM_P2_ENABLE=1
++
++"$VLLM_PY" -m vllm.entrypoints.openai.api_server ...
++```
++
++This P2 smoke directory is a service-scoped event stream. It is not a complete
++`agentmon run` by itself: the hook writes `events.jsonl`, but it does not create
++`manifest.json`, `config.resolved.toml`, `metrics.sqlite3`, child logs, or final
++run status. Use it to validate hook events first. Create a manifest separately
++before treating the directory as a full run for `summary` or `aggregate`.
++
++Because the API process and EngineCore child processes may inherit the same
++`AGENTMON_EVENTS_PATH`, the shared JSONL writer must remain append-only and
++single-write per event:
++
++```bash
++grep -RIn \
++  -E 'AGENTMON_EVENTS_PATH|O_APPEND|O_CREAT|os\.open|os\.write|0o600|event_id' \
++  "$AGENTMON_REPO/src"
++```
++
++The expected implementation uses `os.open(..., O_APPEND|O_CREAT|O_WRONLY,
++0o600)`, one `os.write()` per JSONL event, UUID event ids, and fail-open event
++sink error handling.
++
++The default hook targets fully qualified vLLM `0.18.0` V1 implementation paths:
++
++```text
++vllm.v1.engine.async_llm.AsyncLLMEngine.add_request/generate/abort
++vllm.v1.engine.llm_engine.LLMEngine.add_request/step
++vllm.v1.engine.core.EngineCore.add_request/step
++vllm.v1.core.sched.scheduler.Scheduler.__init__/add_request/schedule/make_stats
++vllm.v1.core.kv_cache_manager.KVCacheManager.__init__/make_prefix_cache_stats
++```
++
++`KVCacheManager.get_computed_blocks` is not patched by default because it is a
++scheduler hot path. Enable it only for a short debug run:
++
++```bash
++export AGENTMON_VLLM_P2_HOOK_GET_COMPUTED_BLOCKS=1
++```
++
++First smoke checks:
++
++```bash
++grep -o '"event_type":"[^"]*"' "$AGENTMON_EVENTS_PATH" | sort | uniq -c
++```
++
++Expected P2 signals include:
++
++```text
++vllm.adapter.capability
++vllm.request.received
++vllm.request.queued
++vllm.request.first_scheduled
++vllm.request.finished
++vllm.kv.snapshot
++```
++
++For the service-scoped smoke stream, emitted capability/KV events must record
++prefix caching as disabled with a null hit rate. When these events are later
++integrated into a complete AgentMon run, reports must display `disabled` /
++`N/A`, not a zero-percent hit rate.
++
+ ### P1 Preflight
+ 
+ Before running a real task, confirm mini-SWE exposes the class-path options:
+diff --git a/docs/p1_mini_swe_adapter.md b/docs/p1_mini_swe_adapter.md
+index 4a412ff..2b2833c 100644
+--- a/docs/p1_mini_swe_adapter.md
++++ b/docs/p1_mini_swe_adapter.md
+@@ -151,6 +151,12 @@ P1 event types include:
+ - `model_request.start` / `model_request.end` / `model_request.error`
+ - `tool_call.start` / `tool_call.process_start` / `tool_call.end` / `tool_call.error`
+ 
++mini-SWE's `Submitted` exception is control flow, not an instrumentation error.
++When it closes a step or tool span, AgentMon emits `*.end` with
++`status=submitted`, `terminal_reason=submitted`, and
++`submission_control_flow=true`, then re-raises so mini-SWE can keep its native
++control-flow semantics.
++
+ Privacy defaults:
+ 
+ - Prompt and response text are not written to AgentMon events.
+@@ -196,6 +202,12 @@ Then regenerate/report:
+ ```
+ 
+ The report should contain `P1 Spans` and `Tool Attribution`.
++For smoke automation, prefer `summary.json` / `agentmon summary --format json`
++and its `task_success`, `data_integrity_pass`,
++`instrumentation_error_count`, `command_nonzero_count`, and
++`submission_control_flow_count` fields. Do not fail a smoke run merely because a
++command returned nonzero; nonzero commands are counted separately from true
++instrumentation errors.
+ 
+ P1 does not provide request-level vLLM queue/prefill/decode or exact KV cache
+ bytes. Those are P2 scope.
+diff --git a/docs/p2_vllm_adapter.md b/docs/p2_vllm_adapter.md
+new file mode 100644
+index 0000000..5a599c1
+--- /dev/null
++++ b/docs/p2_vllm_adapter.md
+@@ -0,0 +1,773 @@
++# P2 vLLM Request and KV Observability Requirements
++
++This document freezes the P2 requirements for AgentMon after the P1 server
++smoke version passed. It is a requirements and acceptance document, not an
++implementation promise that P2 is already available.
++
++P2 extends P0/P1 from run-level and mini-SWE-side spans into vLLM request-level
++observability. The target service is vLLM `0.18.0+empty` with vLLM-Ascend
++`0.18.0`, serving Qwen3-Coder-30B-A3B on Ascend NPUs.
++
++## Status
++
++- P0/P1 remain the stable default path.
++- P2 is opt-in.
++- P2.0 discovery tooling and the P2.1 request-mapping event/report contract are
++  available.
++- P2.2 request lifecycle latency and token summary contracts are available.
++- P2.3 KV pool, KV state, and NPU attribution report contracts are available.
++- P2.4 prefix-cache A/B planner is available as a non-mutating CLI command.
++- The concrete vLLM runtime hook is available as an explicit opt-in loader for
++  vLLM `0.18.0`. It is disabled by default and must be enabled only for a
++  separately launched validation service.
++- Discovery output separates legacy/static probe candidates from the actual
++  installed package scan. Runtime hooks must be resolved only from successful
++  objects, successful module imports, and scanned modules that exist in the
++  target vLLM package.
++- P2 must not modify CANN, system drivers, mini-SWE, or the already running
++  vLLM environment by default.
++- P2 may require a separately launched vLLM service with an AgentMon adapter or
++  plugin loaded explicitly by the operator.
++- If the adapter cannot prove compatibility with vLLM `0.18.0`, it must refuse
++  to load and leave model serving behavior unchanged.
++
++## Success Definition
++
++P2 is successful when a completed AgentMon run can report all of the following,
++with explicit quality labels:
++
++- Agent request id correlated to the vLLM-side request id, or a documented
++  heuristic mapping when direct propagation is unavailable.
++- Request-level queue, prefill, decode, first-token, and end-to-end durations.
++- Request-level prompt, cached, computed prefill, recomputed, and generation
++  token counts when available.
++- KV cache state that distinguishes disabled, enabled with zero hit, cache hit,
++  recomputation, block eviction, and scheduler preemption.
++- KV pool configuration inputs and formula version.
++- Request-window NPU attribution with quality labels, without claiming exact
++  per-request hardware energy.
++- Prefix-cache A/B planning output that compares runs without changing the
++  service automatically.
++- Adapter failure isolation: instrumentation errors do not fail successful model
++  requests.
++
++## Non-Goals
++
++P2 does not:
++
++- Replace Prometheus, Grafana, or the vLLM metrics endpoint.
++- Enable prefix caching automatically.
++- Restart or reconfigure vLLM automatically.
++- Store prompts, completions, full request bodies, or model outputs by default.
++- Emit one event per generated token by default.
++- Claim exact per-request NPU energy from card-level samples.
++- Support arbitrary vLLM versions through guessing.
++- Implement Ascend profiler control; that is P3.
++
++## Deployment Model
++
++P2 code should live under:
++
++```text
++src/agentmon/adapters/vllm_018/
++```
++
++The adapter must be loaded only by an explicit vLLM launch/configuration step.
++It must not be injected into an already running production process by AgentMon
++without operator action.
++
++The adapter must:
++
++- Check the vLLM version at startup.
++- Check the vLLM-Ascend version when available.
++- Record the exact source file paths and signatures it binds to.
++- Refuse to bind to failed discovery module/object references, even if those
++  references appear in generic candidate lists from older vLLM layouts.
++- Fail closed on incompatible versions.
++- Fail open at runtime: adapter observation errors are emitted as
++  `vllm.adapter.error` when possible and must not change vLLM return values or
++  exception behavior.
++- Write fixed-size JSONL events to an AgentMon sink or spool.
++- Use a low-lock or background queue so request handling is not blocked by
++  metrics I/O.
++
++## Runtime Hook Loader
++
++The P2 hook lives in `agentmon.adapters.vllm_018.hook` and is bootstrapped by
++`sitecustomize.py` only when this environment variable is truthy:
++
++```text
++AGENTMON_VLLM_P2_ENABLE=1
++```
++
++The loader does not modify vLLM source files or site-packages. It monkeypatches
++only runtime objects that exist in the process and only when the detected vLLM
++base version is `0.18.0`.
++
++Current vLLM `0.18.0` hook targets:
++
++```text
++vllm.v1.engine.async_llm.AsyncLLMEngine.add_request/generate/abort
++vllm.v1.engine.llm_engine.LLMEngine.add_request/step
++vllm.v1.engine.core.EngineCore.add_request/step
++vllm.v1.core.sched.scheduler.Scheduler.__init__/add_request/schedule/make_stats
++vllm.v1.core.kv_cache_manager.KVCacheManager.__init__/make_prefix_cache_stats
++```
++
++`KVCacheManager.get_computed_blocks` is a hot-path method and is not patched by
++default. It is patched only when this explicit debug flag is truthy:
++
++```text
++AGENTMON_VLLM_P2_HOOK_GET_COMPUTED_BLOCKS=1
++```
++
++Because vLLM V1 may run separate API and EngineCore processes, the same
++`PYTHONPATH`, `AGENTMON_VLLM_P2_ENABLE`, `AGENTMON_RUN_ID`, and
++`AGENTMON_EVENTS_PATH` environment must be inherited by the vLLM service and its
++children. Loading only the API process is insufficient for scheduler/KV events.
++The validation service must be launched from the same CANN/ACL/vLLM source
++environment as the working service; a sanitized terminal without `acl`,
++`vllm_ascend`, or `/data/node0_disk1/vllm` on the import path is not a valid
++P2 launch environment.
++
++Preflight:
++
++```bash
++"$VLLM_PY" - <<'PY'
++import sys
++import vllm
++
++print("python:", sys.executable)
++print("vllm_version:", vllm.__version__)
++print("vllm_file:", vllm.__file__)
++
++import acl
++print("acl_file:", acl.__file__)
++
++import vllm_ascend
++print("vllm_ascend_file:", vllm_ascend.__file__)
++PY
++```
++
++Hook target preflight:
++
++```bash
++"$VLLM_PY" - <<'PY'
++import importlib
++import inspect
++
++targets = [
++    ("vllm.v1.engine.async_llm", "AsyncLLMEngine", ["add_request", "generate", "abort"]),
++    ("vllm.v1.engine.llm_engine", "LLMEngine", ["add_request", "step"]),
++    ("vllm.v1.engine.core", "EngineCore", ["add_request", "step"]),
++    ("vllm.v1.core.sched.scheduler", "Scheduler", ["__init__", "add_request", "schedule", "make_stats"]),
++    ("vllm.v1.core.kv_cache_manager", "KVCacheManager", ["__init__", "make_prefix_cache_stats"]),
++]
++
++failed = False
++for module_name, class_name, methods in targets:
++    print(f"\n{module_name}.{class_name}")
++    try:
++        module = importlib.import_module(module_name)
++        cls = getattr(module, class_name)
++        print("CLASS_FILE:", inspect.getsourcefile(cls))
++    except Exception as exc:
++        failed = True
++        print("CLASS_ERROR:", type(exc).__name__, exc)
++        continue
++    for method_name in methods:
++        method = getattr(cls, method_name, None)
++        if method is None:
++            failed = True
++            print("MISSING_METHOD:", method_name)
++        else:
++            print("METHOD:", method_name, inspect.signature(method))
++
++raise SystemExit(1 if failed else 0)
++PY
++echo "HOOK_TARGET_CHECK_RC=$?"
++```
++
++Start P2 only when `HOOK_TARGET_CHECK_RC=0`. If it fails, update the runtime
++hook from the successful objects in the actual service environment; do not
++bind to failed legacy references from generic discovery lists.
++
++`sitecustomize.py` loader preflight:
++
++```bash
++find "$AGENTMON_REPO/src" -maxdepth 3 -type f \
++  \( -name 'sitecustomize.py' -o -iname '*vllm*' -o -iname '*p2*' \) \
++  -print
++
++env \
++  -u AGENTMON_VLLM_P2_ENABLE \
++  PYTHONPATH="$AGENTMON_REPO/src${PYTHONPATH:+:$PYTHONPATH}" \
++  PYTHONNOUSERSITE=1 \
++  "$VLLM_PY" -c \
++  'import sitecustomize; print("SITECUSTOMIZE_FILE=", sitecustomize.__file__)'
++```
++
++The printed file must be
++`/data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src/src/sitecustomize.py`.
++If a different `sitecustomize.py` wins import resolution, fix `PYTHONPATH`
++before enabling P2.
++
++Validation service isolation:
++
++```bash
++npu-smi info
++ps -eo pid,ppid,cmd | grep -E '[v]llm|[a]pi_server'
++ss -ltnp | grep -E ':8000|:8001|:8002'
++```
++
++The validation service must use a different listening port and a free,
++non-overlapping NPU device set. Do not launch another TP=4 service on devices
++already used by the existing service. If no isolated devices are available, do
++not perform the runtime smoke test concurrently. The `...` in the launch shape
++is not executable by itself: copy the existing service's full launch arguments
++and change only the listening port, device selection, log path, optional served
++model name, and AgentMon P2 environment variables.
++
++Minimal validation launch shape:
++
++```bash
++umask 077
++
++export AGENTMON_REPO=/data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src
++export AGENTMON_HOME=/data/node0_disk3/chenyang/agentmon
++export AGENTMON_RUN_ID=vllm-p2-smoke-$(date +%Y%m%d-%H%M%S)
++export AGENTMON_RUN_DIR="$AGENTMON_HOME/runs/$AGENTMON_RUN_ID"
++export AGENTMON_EVENTS_PATH="$AGENTMON_RUN_DIR/events.jsonl"
++
++mkdir -p -m 700 "$AGENTMON_RUN_DIR"
++chmod 700 "$AGENTMON_RUN_DIR"
++
++export PYTHONPATH="$AGENTMON_REPO/src${PYTHONPATH:+:$PYTHONPATH}"
++export PYTHONNOUSERSITE=1
++export AGENTMON_VLLM_P2_ENABLE=1
++
++"$VLLM_PY" -m vllm.entrypoints.openai.api_server ...
++```
++
++Do not set `AGENTMON_VLLM_P2_HOOK_GET_COMPUTED_BLOCKS=1` for the first smoke
++test. First validate lower-overhead request, scheduler, and prefix-stat events.
++
++The validation hook output is a service-scoped event stream. The hook creates
++or appends `events.jsonl`; it does not create `manifest.json`,
++`config.resolved.toml`, `metrics.sqlite3`, child logs, or a final AgentMon run
++status. Do not treat such a directory as a complete run for `summary` or
++`aggregate` until a manifest/finalization step is added separately.
++
++The API process and EngineCore child processes may write the same
++`AGENTMON_EVENTS_PATH`. The writer must remain append-only and single-write per
++event:
++
++```bash
++grep -RIn \
++  -E 'AGENTMON_EVENTS_PATH|O_APPEND|O_CREAT|os\.open|os\.write|0o600|event_id' \
++  "$AGENTMON_REPO/src"
++```
++
++The expected implementation uses `os.open(..., O_APPEND|O_CREAT|O_WRONLY,
++0o600)`, one `os.write()` per JSONL event, UUID event ids, and fail-open event
++sink error handling.
++
++## Discovery Snapshot Semantics
++
++`scripts/agentmon_p2_discovery.py` is a read-only inspector. It may contain
++static candidate module names for broad coverage, including module paths that
++exist in older or different vLLM layouts. Those failed references are diagnostic
++data only.
++
++Hook implementation must use this priority order:
++
++1. `hook_resolution_inputs.successful_objects`
++2. `hook_resolution_inputs.successful_modules`
++3. `hook_resolution_inputs.package_scan_candidate_modules`
++
++Do not implement hooks against entries listed in:
++
++```text
++hook_resolution_inputs.ignored_failed_modules
++hook_resolution_inputs.ignored_failed_objects
++```
++
++The `vllm_ascend.worker.worker` module may import `acl` and other CANN runtime
++libraries. If discovery is run from a sanitized shell without the same
++`LD_LIBRARY_PATH`, `ASCEND_HOME_PATH`, and related variables used by the real
++vLLM service, that import may fail even though the service can load it. Re-run
++discovery in the actual service launch environment before treating such a
++failure as incompatible.
++
++## Request ID Propagation
++
++Preferred path:
++
++```text
++P1 model_request_id
++  -> OpenAI-compatible HTTP header or body metadata
++  -> vLLM API server request context
++  -> vLLM internal request id
++  -> scheduler/request metrics
++```
++
++P1 already generates `agentmon_model_request_id` and tries to send
++`X-AgentMon-Request-Id` when the LiteLLM call path accepts custom headers. P2
++must preserve that id if the API server receives it.
++
++At minimum, P2 must persist this mapping:
++
++```json
++{
++  "agent_request_id": "modelreq-...",
++  "vllm_request_id": "vllm-...",
++  "run_id": "20260702-...",
++  "received_ns": 123,
++  "first_scheduled_ns": 456,
++  "first_token_ns": 789,
++  "finished_ns": 1000,
++  "correlation_quality": "direct"
++}
++```
++
++Allowed `correlation_quality` values:
++
++- `direct`: AgentMon id was received by vLLM and attached to the internal
++  request.
++- `server_generated`: no AgentMon id was present, but vLLM request id and timing
++  are exact.
++- `heuristic`: matched by request order and time window.
++- `unavailable`: no safe mapping exists.
++
++Heuristic correlation must never be presented as exact.
++
++## Event Contract
++
++P2 events use the same JSONL event envelope as P0/P1 and `source="vllm_p2"`.
++Event payloads must avoid prompt text, completion text, and raw request bodies.
++
++Required event types:
++
++- `vllm.request.received`
++- `vllm.request.queued`
++- `vllm.request.first_scheduled`
++- `vllm.request.prefill_completed`
++- `vllm.request.first_token`
++- `vllm.request.finished`
++- `vllm.request.cancelled`
++- `vllm.request.preempted`
++- `vllm.kv.snapshot`
++- `vllm.kv.block_event`
++- `vllm.adapter.capability`
++- `vllm.adapter.error`
++
++Optional event type:
++
++- `vllm.request.decode_iteration`
++
++`decode_iteration` is disabled by default. When enabled for debugging, it must
++be sampled or aggregated so high token rates cannot overwhelm the event writer.
++
++## Request Metrics
++
++For each vLLM request, P2 should report:
++
++```text
++agent_request_id
++vllm_request_id
++run_id
++model_name
++arrival_time
++queue_duration_s
++prefill_duration_s
++decode_duration_s
++time_to_first_token_s
++e2e_duration_s
++prompt_tokens
++cached_prompt_tokens
++computed_prefill_tokens
++recomputed_prompt_tokens
++generation_tokens
++finish_reason
++preemption_count
++correlation_quality
++metrics_quality
++```
++
++Missing values are `null` in JSON and `N/A` in table/CSV output. They are not
++converted to zero.
++
++## KV Cache Requirements
++
++P2 must distinguish these cases:
++
++- `disabled`: prefix caching or relevant KV feature is explicitly disabled.
++- `enabled_zero_hit`: enabled and queried, with a valid denominator but zero hit.
++- `hit`: cached tokens or block reuse observed.
++- `recomputed`: recomputed prompt tokens observed.
++- `evicted`: KV block eviction observed.
++- `preempted`: scheduler preemption affected the request.
++- `unknown`: feature support or denominator is unavailable.
++
++Per-request KV payload target:
++
++```json
++{
++  "request_id": "vllm-...",
++  "num_cached_tokens": 0,
++  "num_computed_tokens": 512,
++  "num_recomputed_tokens": 0,
++  "allocated_block_count": 32,
++  "freed_block_count": 32,
++  "evicted_block_count": 0,
++  "preemption_count": 0,
++  "kv_usage_before": 0.21,
++  "kv_usage_after": 0.24,
++  "kv_quality": "exact"
++}
++```
++
++Prefix-cache rates:
++
++```text
++prefix_hit_rate = delta(prefix_cache_hits) / delta(prefix_cache_queries)
++cached_prompt_ratio = cached_prompt_tokens / prompt_tokens
++recomputed_prompt_ratio = recomputed_prompt_tokens / prompt_tokens
++```
++
++If the denominator is zero or unavailable, the value is `null` / `N/A`. If
++prefix caching is disabled, the value is `disabled` / `N/A`, not `0%`.
++
++## KV Pool Configuration
++
++P2 must read or infer the KV pool inputs from vLLM cache configuration or
++initialization logs:
++
++```text
++num_gpu_blocks
++block_size
++cache_dtype
++num_layers_per_rank
++num_kv_heads_per_rank
++head_dim
++tensor_parallel_size
++```
++
++The report must preserve:
++
++```text
++formula_version
++source
++source_quality
++bytes_per_block_per_rank
++allocated_pool_bytes_per_rank
++calculation_inputs
++```
++
++Formula:
++
++```text
++bytes_per_block_per_rank =
++  block_size * layers_per_rank * kv_heads_per_rank * head_dim * 2 * dtype_bytes
++
++allocated_pool_bytes_per_rank =
++  num_gpu_blocks * bytes_per_block_per_rank
++```
++
++Do not interpret `npu-smi` process HBM as exact KV cache bytes.
++
++## NPU Request Attribution
++
++P2 may attribute card-level NPU samples to request windows, but must preserve
++quality labels:
++
++- `window`: integrate card-level samples over the request interval.
++- `exclusive`: the request window overlaps a period where vLLM running requests
++  equals one.
++- `estimated_share`: concurrent requests were active and samples were divided by
++  token count or active time.
++- `unavailable`: insufficient samples or missing request timing.
++
++Reports must state that NPU attribution is sampled/estimated unless an exact
++source is available.
++
++## Report and Summary Additions
++
++`report.json` should add a `vllm_p2` section:
++
++```json
++{
++  "status": "complete",
++  "adapter_version": "0.1",
++  "target_vllm_version": "0.18.0",
++  "version_match": true,
++  "request_count": 3,
++  "correlation": {
++    "direct": 3,
++    "heuristic": 0,
++    "unavailable": 0
++  },
++  "latency": {
++    "queue": {"p50": 0.01, "p95": 0.02, "sample_count": 3},
++    "prefill": {"p50": 0.4, "p95": 0.7, "sample_count": 3},
++    "decode": {"p50": 1.5, "p95": 2.0, "sample_count": 3}
++  },
++  "kv_cache": {
++    "prefix_cache_status": "disabled",
++    "prefix_cache_hit_rate": null,
++    "prefix_cache_hit_rate_quality": "disabled"
++  }
++}
++```
++
++`summary.json` should expose compact P2 fields:
++
++```text
++p2_status
++p2_version_match
++p2_request_count
++p2_direct_correlation_count
++p2_heuristic_correlation_count
++p2_unavailable_correlation_count
++request_queue_latency
++request_prefill_latency
++request_decode_latency
++request_ttft_latency
++request_e2e_latency
++p2_cached_prompt_tokens
++p2_computed_prefill_tokens
++p2_recomputed_prompt_tokens
++p2_preemption_count
++p2_kv_pool_bytes_per_rank
++p2_kv_pool_quality
++p2_npu_attribution_quality_counts
++```
++
++Aggregate reports should include sample counts and coverage for every P2 metric.
++
++## Prefix Cache A/B Planning
++
++P2 should add planning support:
++
++```bash
++agentmon experiment plan prefix-cache \
++  --baseline-run <run-id> \
++  --variant-config <path>
++```
++
++The planner must not restart vLLM. It should produce a checklist and comparable
++run matrix:
++
++- same task set
++- same model
++- same vLLM version
++- same tensor/expert parallelism
++- same max model len, max seqs, max batched tokens
++- same warmup strategy
++- cold-cache and warm-cache runs separated
++- repeated runs per condition
++- compared metrics: success, TTFT, queue, prefill, decode, E2E, KV usage,
++  cached tokens, recomputed tokens, preemption count
++
++## Capability Discovery
++
++`agentmon doctor` should include P2 capability checks when configured:
++
++- vLLM version is exactly supported.
++- vLLM-Ascend version is detected.
++- Adapter import works in the target vLLM Python environment.
++- Required hook points exist with expected signatures.
++- Event sink path is writable.
++- Adapter can run in dry-run mode without serving a request.
++
++Doctor must not block indefinitely. Each P2 probe needs its own timeout.
++
++## Failure Isolation
++
++Instrumentation failures must be reported as `vllm.adapter.error` and counted
++as P2 data-quality failures. They must not:
++
++- change generated model text
++- change HTTP response status for a successful model request
++- crash the vLLM worker
++- block the request path on event writer backpressure
++
++If the adapter queue is full, P2 may drop low-priority debug events, but must
++preserve request lifecycle terminal events when possible and count drops.
++
++## Test Requirements
++
++Unit tests:
++
++- version check accepts exactly supported vLLM `0.18.0` / `0.18.0+empty`
++- version check rejects incompatible versions
++- request id mapping stores direct and heuristic quality separately
++- request latency calculations handle missing timestamps
++- prefix cache disabled returns `null` / `N/A`, not zero
++- denominator zero returns `null`
++- cached/computed/recomputed token fields remain null when missing
++- KV pool formula uses the documented inputs
++- adapter exceptions are isolated and emitted as errors
++- queue overflow drops only low-priority events
++- report and summary expose P2 fields with sample counts and coverage
++
++Integration tests on the target server:
++
++- P2 dry-run adapter import in the vLLM Python environment
++- one successful request with direct request-id correlation
++- one concurrent-request run with attribution quality not marked exact
++- prefix-cache-disabled run reports disabled / N/A
++- missing P2 adapter degrades to `p2_status=missing`
++
++## Acceptance Checklist
++
++- [x] Strict vLLM `0.18.0` compatibility gate.
++- [x] Request id end-to-end or stable quality-labeled fallback event contract.
++- [x] Request-level queue/prefill/decode/TTFT/E2E report contract.
++- [x] Cached/computed/recomputed token report contract.
++- [x] KV pool parameters and formula inputs.
++- [x] KV disabled/zero-hit/hit/recomputed/evicted/preempted state reporting.
++- [x] Adapter failure isolation in unit-tested runtime wrappers.
++- [x] Concurrent request attribution quality label fields.
++- [x] Prefix Cache A/B planning report.
++- [x] `doctor`, `report`, `summary`, and `aggregate` understand P2 data.
++- [ ] Target-server vLLM P2 smoke validates live hook loading in API and
++  EngineCore processes.
++
++## Suggested Implementation Order
++
++### P2.0 Discovery Snapshot
++
++On the server, export vLLM `0.18.0` source context and runtime signatures for
++the API server, request objects, scheduler, cache config, and metrics hooks.
++No code changes yet.
++
++Use the read-only discovery script from the vLLM Python environment:
++
++```bash
++export AGENTMON_REPO=/data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src
++export VLLM_PY=/data/node0_disk3/chenyang/agent-runtime-poc/envs/verl-cann90/bin/python
++export OUT=/data/node0_disk3/chenyang/agentmon-p2-discovery-$(date +%Y%m%d-%H%M%S).json
++
++PYTHONNOUSERSITE=1 \
++  "$VLLM_PY" "$AGENTMON_REPO/scripts/agentmon_p2_discovery.py" \
++  --output "$OUT" \
++  --strict-version
++
++python3 -m json.tool "$OUT" >/dev/null
++ls -lh "$OUT"
++```
++
++The script imports candidate vLLM modules, records package versions, module
++paths, object signatures, source hashes, and bounded source excerpts. It does
++not start vLLM, send requests, hook functions, or modify site-packages.
++
++If the server's vLLM `0.18.0` uses different internal paths, rerun with extra
++targets instead of editing the script:
++
++```bash
++PYTHONNOUSERSITE=1 \
++  "$VLLM_PY" "$AGENTMON_REPO/scripts/agentmon_p2_discovery.py" \
++  --output "$OUT" \
++  --module vllm.some.module \
++  --object vllm.some.module:SomeClass
++```
++
++### P2.1 Request ID and Mapping
++
++Implement the smallest adapter that records request lifecycle and maps
++AgentMon request ids to vLLM request ids. Update reports and tests.
++
++Current foundation:
++
++- `agentmon.adapters.vllm_018.version` gates vLLM `0.18.0` / `0.18.0+...`.
++- `agentmon.adapters.vllm_018.events.VllmP2EventSink` emits
++  `vllm.request.received`, `vllm.request.finished`,
++  `vllm.adapter.capability`, and `vllm.adapter.error` events.
++- `report.json` includes a `vllm_p2` section when those events are present.
++- `summary.json` includes compact P2 request/correlation/error counts.
++- P2 JSONL events are excluded from P0 SQLite consistency checks, the same way
++  P1 adapter events are excluded.
++
++Runtime hook status for P2.1:
++
++- The opt-in runtime loader binds request entry/completion events to
++  `AsyncLLMEngine`, `LLMEngine`, and `EngineCore` when those classes exist.
++- Verify direct `X-AgentMon-Request-Id` propagation with a live request on the
++  target service.
++- Add server integration tests for direct and heuristic mapping quality.
++
++### P2.2 Request Latency and Token Metrics
++
++Add queue/prefill/decode/TTFT/E2E and prompt/cached/computed/recomputed/generation
++token metrics. Keep per-token events disabled by default.
++
++Current foundation:
++
++- `VllmP2EventSink` can emit `vllm.request.queued`,
++  `vllm.request.first_scheduled`, `vllm.request.prefill_completed`,
++  `vllm.request.first_token`, `vllm.request.preempted`, and
++  `vllm.request.finished`.
++- `report.json.vllm_p2.latency` derives queue, prefill, decode, TTFT, and E2E
++  summaries only when the required timestamp pairs are available.
++- `report.json.vllm_p2.tokens` summarizes prompt, cached prompt, computed
++  prefill, recomputed prompt, generation tokens, and preemption count with
++  sample counts and coverage.
++- `summary.json` and `agentmon aggregate` expose compact P2 latency/token
++  fields. Missing values remain `null` / `N/A`; they are not converted to zero.
++
++Runtime hook status for P2.2:
++
++- The opt-in runtime loader emits request received, queued, first scheduled,
++  first token, finished, cancelled, and preempted events from the vLLM V1 API,
++  EngineCore, Scheduler, and output boundaries when the fields are available.
++- Validate token field values against a target-server request smoke.
++- Add server integration tests for successful, cancelled, and preempted
++  requests.
++
++### P2.3 KV Pool and NPU Attribution
++
++Add KV pool configuration extraction, KV block/preemption events when available,
++and request-window NPU attribution quality labels.
++
++Current foundation:
++
++- `agentmon.adapters.vllm_018.kv.calculate_kv_pool()` implements the documented
++  bytes-per-block and allocated-pool formula with preserved inputs and formula
++  version.
++- `VllmP2EventSink` can emit `vllm.kv.snapshot`,
++  `vllm.kv.block_event`, and `vllm.request.npu_attribution`.
++- `report.json.vllm_p2.kv_cache` reports prefix-cache status/hit rate,
++  cached/recomputed prompt ratios, KV state counts, KV block event totals,
++  KV usage ratio samples, and KV pool inputs/bytes.
++- `report.json.vllm_p2.npu_attribution` reports request attribution quality
++  counts and sampled utilization/power totals.
++- `summary.json` and `agentmon aggregate` expose compact KV pool/state and NPU
++  attribution fields.
++
++Runtime hook status for P2.3:
++
++- The opt-in runtime loader emits KV snapshots from `Scheduler` and
++  `KVCacheManager.make_prefix_cache_stats`; it intentionally avoids the
++  `get_computed_blocks` hot path unless explicitly enabled for debugging.
++- Validate target-server cached/computed/recomputed token values under real
++  request traffic.
++- Validate request-window NPU attribution against real sampled vLLM concurrency.
++
++### P2.4 Prefix Cache Experiment Planner
++
++Add the non-mutating `agentmon experiment plan prefix-cache` helper and report
++comparisons. Do not restart or reconfigure vLLM automatically.
++
++Current foundation:
++
++```bash
++agentmon experiment plan prefix-cache \
++  --baseline-run <run-id> \
++  --variant-config <path> \
++  --format json
++```
++
++The planner reads existing AgentMon run reports plus a candidate variant config
++and emits a checklist/matrix. It does not restart, reconfigure, or send requests
++to vLLM.
+diff --git a/scripts/agentmon_p2_discovery.py b/scripts/agentmon_p2_discovery.py
+new file mode 100644
+index 0000000..49d2918
+--- /dev/null
++++ b/scripts/agentmon_p2_discovery.py
+@@ -0,0 +1,588 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib
++import importlib.metadata
++import importlib.util
++import inspect
++import json
++import os
++from pathlib import Path
++import platform
++import sys
++import time
++from types import ModuleType
++from typing import Any, Sequence
++
++
++SCHEMA_VERSION = "1.0"
++TARGET_VLLM_VERSION = "0.18.0"
++
++DEFAULT_PACKAGES = [
++    "vllm",
++    "vllm_ascend",
++    "torch",
++    "torch_npu",
++]
++
++DEFAULT_SCAN_PACKAGES = [
++    "vllm",
++    "vllm_ascend",
++]
++
++DEFAULT_MODULES = [
++    "vllm",
++    "vllm.config",
++    "vllm.entrypoints.metrics",
++    "vllm.entrypoints.openai.api_server",
++    "vllm.entrypoints.openai.protocol",
++    "vllm.entrypoints.openai.serving_chat",
++    "vllm.entrypoints.openai.serving_completion",
++    "vllm.entrypoints.openai.serving_engine",
++    "vllm.engine.async_llm_engine",
++    "vllm.engine.llm_engine",
++    "vllm.engine.metrics",
++    "vllm.core.block_manager",
++    "vllm.core.scheduler",
++    "vllm.worker.cache_engine",
++    "vllm.v1.core.block_pool",
++    "vllm.v1.core.kv_cache_manager",
++    "vllm.v1.core.scheduler",
++    "vllm.v1.engine.async_llm",
++    "vllm.v1.metrics.prometheus",
++    "vllm.v1.metrics.stats",
++    "vllm.v1.request",
++    "vllm_ascend",
++    "vllm_ascend.platform",
++    "vllm_ascend.worker.worker",
++]
++
++DEFAULT_OBJECTS = [
++    "vllm.config:CacheConfig",
++    "vllm.config:EngineArgs",
++    "vllm.config:ModelConfig",
++    "vllm.config:ParallelConfig",
++    "vllm.entrypoints.openai.protocol:ChatCompletionRequest",
++    "vllm.entrypoints.openai.protocol:CompletionRequest",
++    "vllm.entrypoints.openai.serving_chat:OpenAIServingChat",
++    "vllm.entrypoints.openai.serving_completion:OpenAIServingCompletion",
++    "vllm.engine.async_llm_engine:AsyncLLMEngine",
++    "vllm.engine.llm_engine:LLMEngine",
++    "vllm.engine.metrics:PrometheusStatLogger",
++    "vllm.engine.metrics:StatLoggerBase",
++    "vllm.core.scheduler:Scheduler",
++    "vllm.worker.cache_engine:CacheEngine",
++    "vllm.v1.engine.async_llm:AsyncLLMEngine",
++    "vllm.v1.core.kv_cache_manager:KVCacheManager",
++    "vllm.v1.core.scheduler:Scheduler",
++    "vllm.v1.request:Request",
++]
++
++INTERESTING_NAME_PARTS = (
++    "request",
++    "schedule",
++    "scheduler",
++    "cache",
++    "block",
++    "metric",
++    "stat",
++    "token",
++    "prefix",
++    "preempt",
++    "queue",
++    "prefill",
++    "decode",
++)
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    args = build_parser().parse_args(argv)
++    snapshot = collect_snapshot(
++        package_names=extend(DEFAULT_PACKAGES, args.package),
++        module_names=extend(DEFAULT_MODULES, args.module),
++        object_refs=extend(DEFAULT_OBJECTS, args.object),
++        scan_package_names=[] if args.no_default_scan else extend(DEFAULT_SCAN_PACKAGES, args.scan_package),
++        scan_limit=args.scan_limit,
++        source_lines=args.source_lines,
++    )
++    output = json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True)
++    if args.output:
++        path = Path(args.output)
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_text(output + "\n", encoding="utf-8")
++    else:
++        print(output)
++    if args.strict_version and snapshot["readiness"]["vllm_version_status"] != "compatible":
++        return 1
++    return 0
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="Collect a read-only AgentMon P2 discovery snapshot from a vLLM Python environment."
++    )
++    parser.add_argument("--output", "-o", help="write JSON snapshot to this file; stdout is used when omitted")
++    parser.add_argument(
++        "--source-lines",
++        type=int,
++        default=160,
++        help="maximum source lines to include per object",
++    )
++    parser.add_argument("--package", action="append", default=[], help="additional package name to inspect")
++    parser.add_argument("--module", action="append", default=[], help="additional module name to inspect")
++    parser.add_argument(
++        "--scan-package",
++        action="append",
++        default=[],
++        help="additional installed package to scan for candidate modules without importing submodules",
++    )
++    parser.add_argument(
++        "--scan-limit",
++        type=int,
++        default=800,
++        help="maximum module files to list per scanned package",
++    )
++    parser.add_argument(
++        "--no-default-scan",
++        action="store_true",
++        help="disable the default vllm/vllm_ascend package filesystem scan",
++    )
++    parser.add_argument(
++        "--object",
++        action="append",
++        default=[],
++        help="additional object reference in module:qualname form",
++    )
++    parser.add_argument(
++        "--strict-version",
++        action="store_true",
++        help="exit 1 if the detected vLLM version is not compatible with 0.18.0",
++    )
++    return parser
++
++
++def collect_snapshot(
++    *,
++    package_names: Sequence[str] = DEFAULT_PACKAGES,
++    module_names: Sequence[str] = DEFAULT_MODULES,
++    object_refs: Sequence[str] = DEFAULT_OBJECTS,
++    scan_package_names: Sequence[str] = DEFAULT_SCAN_PACKAGES,
++    scan_limit: int = 800,
++    source_lines: int = 160,
++) -> dict[str, Any]:
++    packages = {name: inspect_package(name) for name in unique(package_names)}
++    modules = {name: inspect_module(name) for name in unique(module_names)}
++    objects = {ref: inspect_object(ref, source_lines=source_lines) for ref in unique(object_refs)}
++    package_scans = {
++        name: scan_package_modules(name, limit=scan_limit)
++        for name in unique(scan_package_names)
++    }
++    vllm_version = packages.get("vllm", {}).get("version")
++    return {
++        "schema_version": SCHEMA_VERSION,
++        "snapshot_type": "agentmon.p2_discovery",
++        "collected_wall_time_ns": time.time_ns(),
++        "python": python_snapshot(),
++        "environment": environment_snapshot(),
++        "packages": packages,
++        "modules": modules,
++        "objects": objects,
++        "package_scans": package_scans,
++        "hook_resolution_inputs": hook_resolution_inputs(modules, objects, package_scans),
++        "readiness": readiness_snapshot(vllm_version, modules, objects),
++    }
++
++
++def inspect_package(name: str) -> dict[str, Any]:
++    data: dict[str, Any] = {"status": "unknown", "name": name, "version": None}
++    try:
++        data["version"] = importlib.metadata.version(name)
++        data["metadata_status"] = "ok"
++    except importlib.metadata.PackageNotFoundError:
++        data["metadata_status"] = "not_found"
++    spec = safe_find_spec(name)
++    data["spec"] = spec_snapshot(spec)
++    try:
++        module = importlib.import_module(name)
++    except Exception as exc:
++        data.update({"status": "import_error", "error": exception_summary(exc)})
++        return data
++    data["status"] = "ok"
++    data["file"] = getattr(module, "__file__", None)
++    if data["version"] is None:
++        data["version"] = getattr(module, "__version__", None)
++    return data
++
++
++def inspect_module(name: str) -> dict[str, Any]:
++    data: dict[str, Any] = {"status": "unknown", "name": name}
++    spec = safe_find_spec(name)
++    data["spec"] = spec_snapshot(spec)
++    if spec is None:
++        data["status"] = "not_found"
++        return data
++    try:
++        module = importlib.import_module(name)
++    except Exception as exc:
++        data.update({"status": "import_error", "error": exception_summary(exc)})
++        return data
++    data.update(
++        {
++            "status": "ok",
++            "file": getattr(module, "__file__", None),
++            "package": getattr(module, "__package__", None),
++            "candidate_symbols": module_candidate_symbols(module),
++        }
++    )
++    return data
++
++
++def inspect_object(ref: str, *, source_lines: int) -> dict[str, Any]:
++    data: dict[str, Any] = {"status": "unknown", "ref": ref}
++    try:
++        module_name, qualname = split_ref(ref)
++        module = importlib.import_module(module_name)
++        obj = resolve_qualname(module, qualname)
++    except Exception as exc:
++        data.update({"status": "error", "error": exception_summary(exc)})
++        return data
++    data.update(object_metadata(obj))
++    data["status"] = "ok"
++    data["ref"] = ref
++    data["signature"] = safe_signature(obj)
++    if inspect.isclass(obj):
++        data["init_signature"] = safe_signature(getattr(obj, "__init__", None))
++        data["call_signature"] = safe_signature(getattr(obj, "__call__", None))
++        data["methods"] = class_methods(obj)
++    source = source_snapshot(obj, max_lines=source_lines)
++    if source:
++        data["source"] = source
++    return data
++
++
++def scan_package_modules(name: str, *, limit: int) -> dict[str, Any]:
++    spec = safe_find_spec(name)
++    data: dict[str, Any] = {
++        "status": "unknown",
++        "name": name,
++        "spec": spec_snapshot(spec),
++        "module_count": 0,
++        "candidate_module_count": 0,
++        "truncated": False,
++        "modules": [],
++        "candidate_modules": [],
++    }
++    if spec is None:
++        data["status"] = "not_found"
++        return data
++    locations = list(getattr(spec, "submodule_search_locations", []) or [])
++    if not locations:
++        data["status"] = "not_package"
++        return data
++    modules: list[dict[str, Any]] = []
++    candidates: list[dict[str, Any]] = []
++    for root_raw in locations:
++        root = Path(root_raw)
++        if not root.exists():
++            continue
++        for path in sorted(root.rglob("*.py")):
++            if any(part == "__pycache__" for part in path.parts):
++                continue
++            if len(modules) >= max(0, limit):
++                data["truncated"] = True
++                break
++            module_name = module_name_from_path(name, root, path)
++            if module_name is None:
++                continue
++            row = {
++                "name": module_name,
++                "file": str(path),
++                "interesting_name_parts": interesting_name_parts(module_name),
++            }
++            modules.append(row)
++            if row["interesting_name_parts"]:
++                candidates.append(row)
++        if data["truncated"]:
++            break
++    data["status"] = "ok"
++    data["module_count"] = len(modules)
++    data["candidate_module_count"] = len(candidates)
++    data["modules"] = modules
++    data["candidate_modules"] = candidates
++    return data
++
++
++def module_name_from_path(package_name: str, root: Path, path: Path) -> str | None:
++    try:
++        rel = path.relative_to(root)
++    except ValueError:
++        return None
++    parts = list(rel.with_suffix("").parts)
++    if not parts:
++        return None
++    if parts[-1] == "__init__":
++        parts = parts[:-1]
++    return ".".join([package_name, *parts]) if parts else package_name
++
++
++def interesting_name_parts(value: str) -> list[str]:
++    lowered = value.lower()
++    return [part for part in INTERESTING_NAME_PARTS if part in lowered]
++
++
++def hook_resolution_inputs(
++    modules: dict[str, dict[str, Any]],
++    objects: dict[str, dict[str, Any]],
++    package_scans: dict[str, dict[str, Any]],
++) -> dict[str, Any]:
++    scan_candidates: list[dict[str, Any]] = []
++    for package, scan in package_scans.items():
++        if scan.get("status") != "ok":
++            continue
++        for row in scan.get("candidate_modules", []):
++            scan_candidates.append({"package": package, **row})
++    return {
++        "policy": (
++            "Use successful_modules, successful_objects, and package_scan_candidate_modules only. "
++            "Do not bind hooks to failed module/object references."
++        ),
++        "successful_modules": [
++            {"name": name, "file": item.get("file"), "candidate_symbols": item.get("candidate_symbols", [])}
++            for name, item in modules.items()
++            if item.get("status") == "ok"
++        ],
++        "successful_objects": [
++            {"ref": ref, "kind": item.get("kind"), "file": item.get("file"), "signature": item.get("signature")}
++            for ref, item in objects.items()
++            if item.get("status") == "ok"
++        ],
++        "package_scan_candidate_modules": scan_candidates,
++        "ignored_failed_modules": [
++            {"name": name, "status": item.get("status"), "error": item.get("error")}
++            for name, item in modules.items()
++            if item.get("status") != "ok"
++        ],
++        "ignored_failed_objects": [
++            {"ref": ref, "status": item.get("status"), "error": item.get("error")}
++            for ref, item in objects.items()
++            if item.get("status") != "ok"
++        ],
++    }
++
++
++def python_snapshot() -> dict[str, Any]:
++    return {
++        "executable": sys.executable,
++        "version": sys.version,
++        "version_info": list(sys.version_info[:5]),
++        "platform": platform.platform(),
++        "machine": platform.machine(),
++        "prefix": sys.prefix,
++        "base_prefix": sys.base_prefix,
++        "path_head": sys.path[:8],
++    }
++
++
++def environment_snapshot() -> dict[str, Any]:
++    keys = [
++        "AGENTMON_REPO",
++        "AGENTMON_HOME",
++        "AGENTMON_RUN_ID",
++        "AGENTMON_RUN_DIR",
++        "AGENTMON_EVENTS_PATH",
++        "VLLM_WORKER_MULTIPROC_METHOD",
++        "ASCEND_HOME_PATH",
++        "ASCEND_OPP_PATH",
++        "ACL_HOME_PATH",
++        "TOOLCHAIN_HOME",
++        "TBE_IMPL_PATH",
++        "LD_LIBRARY_PATH",
++        "PYTHONPATH",
++        "PYTHONHOME",
++    ]
++    return {
++        "note": (
++            "For vllm_ascend modules that import acl/CANN libraries, rerun discovery in the same "
++            "environment used to launch the actual vLLM service."
++        ),
++        "variables": {key: os.environ.get(key) for key in keys if os.environ.get(key) is not None},
++    }
++
++
++def readiness_snapshot(
++    vllm_version: Any,
++    modules: dict[str, dict[str, Any]],
++    objects: dict[str, dict[str, Any]],
++) -> dict[str, Any]:
++    module_ok = sum(1 for item in modules.values() if item.get("status") == "ok")
++    object_ok = sum(1 for item in objects.values() if item.get("status") == "ok")
++    return {
++        "target_vllm_version": TARGET_VLLM_VERSION,
++        "detected_vllm_version": vllm_version,
++        "vllm_version_status": vllm_version_status(vllm_version),
++        "module_ok_count": module_ok,
++        "module_total_count": len(modules),
++        "object_ok_count": object_ok,
++        "object_total_count": len(objects),
++        "missing_or_error_objects": [
++            ref for ref, item in objects.items() if item.get("status") != "ok"
++        ],
++    }
++
++
++def vllm_version_status(version: Any) -> str:
++    if version in {None, ""}:
++        return "missing"
++    text = str(version)
++    base = text.split("+", 1)[0]
++    if base == TARGET_VLLM_VERSION:
++        return "compatible"
++    return "mismatch"
++
++
++def safe_find_spec(name: str) -> Any:
++    try:
++        return importlib.util.find_spec(name)
++    except (ImportError, AttributeError, ValueError):
++        return None
++
++
++def spec_snapshot(spec: Any) -> dict[str, Any] | None:
++    if spec is None:
++        return None
++    return {
++        "name": getattr(spec, "name", None),
++        "origin": getattr(spec, "origin", None),
++        "has_location": getattr(spec, "has_location", None),
++        "submodule_search_locations": list(getattr(spec, "submodule_search_locations", []) or []),
++    }
++
++
++def module_candidate_symbols(module: ModuleType) -> list[dict[str, str]]:
++    rows: list[dict[str, str]] = []
++    for name in sorted(dir(module)):
++        lowered = name.lower()
++        if not any(part in lowered for part in INTERESTING_NAME_PARTS):
++            continue
++        try:
++            obj = getattr(module, name)
++        except Exception:
++            continue
++        rows.append({"name": name, "kind": object_kind(obj), "signature": safe_signature(obj)})
++        if len(rows) >= 120:
++            break
++    return rows
++
++
++def object_metadata(obj: Any) -> dict[str, Any]:
++    return {
++        "kind": object_kind(obj),
++        "module": getattr(obj, "__module__", None),
++        "qualname": getattr(obj, "__qualname__", getattr(obj, "__name__", None)),
++        "file": safe_object_file(obj),
++    }
++
++
++def object_kind(obj: Any) -> str:
++    if inspect.ismodule(obj):
++        return "module"
++    if inspect.isclass(obj):
++        return "class"
++    if inspect.iscoroutinefunction(obj):
++        return "coroutine_function"
++    if inspect.isfunction(obj):
++        return "function"
++    if inspect.ismethod(obj):
++        return "method"
++    if callable(obj):
++        return "callable"
++    return type(obj).__name__
++
++
++def safe_signature(obj: Any) -> str | None:
++    if obj is None:
++        return None
++    try:
++        return str(inspect.signature(obj))
++    except (TypeError, ValueError):
++        return None
++
++
++def safe_object_file(obj: Any) -> str | None:
++    try:
++        return inspect.getsourcefile(obj) or inspect.getfile(obj)
++    except (TypeError, OSError):
++        return None
++
++
++def class_methods(cls: type) -> list[dict[str, str | None]]:
++    rows: list[dict[str, str | None]] = []
++    for name, member in inspect.getmembers(cls):
++        lowered = name.lower()
++        if name.startswith("__") and name not in {"__init__", "__call__"}:
++            continue
++        if name not in {"__init__", "__call__"} and not any(part in lowered for part in INTERESTING_NAME_PARTS):
++            continue
++        if not callable(member):
++            continue
++        rows.append({"name": name, "kind": object_kind(member), "signature": safe_signature(member)})
++        if len(rows) >= 120:
++            break
++    return rows
++
++
++def source_snapshot(obj: Any, *, max_lines: int) -> dict[str, Any] | None:
++    try:
++        lines, start_line = inspect.getsourcelines(obj)
++    except (OSError, TypeError):
++        return None
++    text = "".join(lines)
++    excerpt = lines[: max(0, max_lines)]
++    return {
++        "start_line": start_line,
++        "line_count": len(lines),
++        "sha256": hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest(),
++        "excerpt_truncated": len(lines) > len(excerpt),
++        "excerpt": [line.rstrip("\n") for line in excerpt],
++    }
++
++
++def split_ref(ref: str) -> tuple[str, str]:
++    if ":" not in ref:
++        raise ValueError(f"object ref must be module:qualname, got {ref!r}")
++    module_name, qualname = ref.split(":", 1)
++    if not module_name or not qualname:
++        raise ValueError(f"object ref must be module:qualname, got {ref!r}")
++    return module_name, qualname
++
++
++def resolve_qualname(module: ModuleType, qualname: str) -> Any:
++    obj: Any = module
++    for part in qualname.split("."):
++        obj = getattr(obj, part)
++    return obj
++
++
++def exception_summary(exc: BaseException) -> dict[str, str]:
++    return {"type": type(exc).__name__, "message": str(exc)}
++
++
++def unique(values: Sequence[str]) -> list[str]:
++    seen: set[str] = set()
++    result: list[str] = []
++    for value in values:
++        if value in seen:
++            continue
++        seen.add(value)
++        result.append(value)
++    return result
++
++
++def extend(defaults: Sequence[str], extras: Sequence[str]) -> list[str]:
++    return unique([*defaults, *extras])
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/src/agentmon/adapters/vllm_018/__init__.py b/src/agentmon/adapters/vllm_018/__init__.py
+new file mode 100644
+index 0000000..994694e
+--- /dev/null
++++ b/src/agentmon/adapters/vllm_018/__init__.py
+@@ -0,0 +1,21 @@
++"""P2 adapter helpers for vLLM 0.18.x.
++
++This package intentionally does not import or patch vLLM at import time. The
++runtime hook layer should be added only after target-server discovery confirms
++the exact vLLM 0.18.0 internals.
++"""
++
++from .events import VllmP2EventSink
++from .hook import install as install_vllm_p2_hooks, install_from_env as install_vllm_p2_hooks_from_env
++from .kv import calculate_kv_pool
++from .version import UnsupportedVllmVersion, is_supported_vllm_version, require_supported_vllm_version
++
++__all__ = [
++    "UnsupportedVllmVersion",
++    "VllmP2EventSink",
++    "calculate_kv_pool",
++    "install_vllm_p2_hooks",
++    "install_vllm_p2_hooks_from_env",
++    "is_supported_vllm_version",
++    "require_supported_vllm_version",
++]
+diff --git a/src/agentmon/adapters/vllm_018/events.py b/src/agentmon/adapters/vllm_018/events.py
+new file mode 100644
+index 0000000..c4f63b1
+--- /dev/null
++++ b/src/agentmon/adapters/vllm_018/events.py
+@@ -0,0 +1,383 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++import os
++from pathlib import Path
++import sys
++import threading
++import time
++from typing import Any
++
++from agentmon.events import Event
++from agentmon.sampling.procfs import read_proc_stat
++from agentmon.security import exception_fingerprint
++from agentmon.storage.jsonl import JsonlWriter
++
++from .kv import calculate_kv_pool
++
++
++SOURCE = "vllm_p2"
++
++
++@dataclass
++class RequestMapping:
++    agent_request_id: str | None
++    vllm_request_id: str | None
++    run_id: str
++    correlation_quality: str
++    received_ns: int | None = None
++    queued_ns: int | None = None
++    first_scheduled_ns: int | None = None
++    prefill_completed_ns: int | None = None
++    first_token_ns: int | None = None
++    finished_ns: int | None = None
++
++    def to_payload(self) -> dict[str, Any]:
++        return {
++            "agent_request_id": self.agent_request_id,
++            "vllm_request_id": self.vllm_request_id,
++            "run_id": self.run_id,
++            "correlation_quality": self.correlation_quality,
++            "received_ns": self.received_ns,
++            "queued_ns": self.queued_ns,
++            "first_scheduled_ns": self.first_scheduled_ns,
++            "prefill_completed_ns": self.prefill_completed_ns,
++            "first_token_ns": self.first_token_ns,
++            "finished_ns": self.finished_ns,
++        }
++
++
++class VllmP2EventSink:
++    """Append-only P2 event sink for vLLM adapter code.
++
++    The sink is safe to instantiate in dry-run tests. If no events path is
++    configured, events are returned to the caller but not persisted.
++    """
++
++    def __init__(
++        self,
++        *,
++        run_id: str | None = None,
++        events_path: str | Path | None = None,
++        writer: JsonlWriter | None = None,
++    ) -> None:
++        self.run_id = run_id or os.environ.get("AGENTMON_RUN_ID", "unattached")
++        events_raw = events_path or os.environ.get("AGENTMON_EVENTS_PATH")
++        self.events_path = Path(events_raw) if events_raw else None
++        self._lock = threading.Lock()
++        self._sequence = 0
++        self.source_pid = os.getpid()
++        proc_stat = read_proc_stat(self.source_pid)
++        self.source_starttime_ticks = (
++            int(proc_stat["starttime_ticks"])
++            if proc_stat is not None and isinstance(proc_stat.get("starttime_ticks"), int)
++            else None
++        )
++        self.write_errors_total = 0
++        self._writer = writer
++        if self._writer is None and self.events_path is not None:
++            try:
++                self._writer = JsonlWriter(self.events_path)
++            except Exception as exc:
++                self.write_errors_total += 1
++                print(f"agentmon vllm p2 event sink unavailable: {exc}", file=sys.stderr)
++
++    @classmethod
++    def from_env(cls) -> "VllmP2EventSink":
++        return cls()
++
++    def emit(
++        self,
++        event_type: str,
++        *,
++        payload: dict[str, Any] | None = None,
++        quality: str = "exact",
++        labels: dict[str, Any] | None = None,
++    ) -> Event:
++        enriched_payload = dict(payload or {})
++        enriched_payload.setdefault("trace_id", self.run_id)
++        enriched_payload.setdefault("source_pid", self.source_pid)
++        if self.source_starttime_ticks is not None:
++            enriched_payload.setdefault("source_starttime_ticks", self.source_starttime_ticks)
++        enriched_payload.setdefault("sequence", self.next_sequence())
++        event = Event(
++            run_id=self.run_id,
++            source=SOURCE,
++            event_type=event_type,
++            quality=quality,
++            labels=labels or {},
++            payload=enriched_payload,
++        )
++        if self._writer is not None:
++            try:
++                with self._lock:
++                    self._writer.write_event(event)
++            except Exception as exc:
++                self.write_errors_total += 1
++                print(f"agentmon vllm p2 event write failed: {exc}", file=sys.stderr)
++        return event
++
++    def request_received(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        received_ns: int | None = None,
++        model_name: str | None = None,
++    ) -> Event:
++        received_ns = received_ns if received_ns is not None else time.monotonic_ns()
++        mapping = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++            received_ns=received_ns,
++        )
++        payload = mapping.to_payload()
++        if model_name is not None:
++            payload["model_name"] = model_name
++        return self._request_event("vllm.request.received", payload, correlation_quality)
++
++    def request_queued(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        queued_ns: int | None = None,
++    ) -> Event:
++        queued_ns = queued_ns if queued_ns is not None else time.monotonic_ns()
++        payload = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++            queued_ns=queued_ns,
++        ).to_payload()
++        return self._request_event("vllm.request.queued", payload, correlation_quality)
++
++    def request_first_scheduled(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        first_scheduled_ns: int | None = None,
++    ) -> Event:
++        first_scheduled_ns = first_scheduled_ns if first_scheduled_ns is not None else time.monotonic_ns()
++        payload = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++            first_scheduled_ns=first_scheduled_ns,
++        ).to_payload()
++        return self._request_event("vllm.request.first_scheduled", payload, correlation_quality)
++
++    def request_prefill_completed(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        prefill_completed_ns: int | None = None,
++        prompt_tokens: int | None = None,
++        cached_prompt_tokens: int | None = None,
++        computed_prefill_tokens: int | None = None,
++        recomputed_prompt_tokens: int | None = None,
++    ) -> Event:
++        prefill_completed_ns = prefill_completed_ns if prefill_completed_ns is not None else time.monotonic_ns()
++        payload = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++            prefill_completed_ns=prefill_completed_ns,
++        ).to_payload()
++        payload.update(
++            {
++                "prompt_tokens": prompt_tokens,
++                "cached_prompt_tokens": cached_prompt_tokens,
++                "computed_prefill_tokens": computed_prefill_tokens,
++                "recomputed_prompt_tokens": recomputed_prompt_tokens,
++            }
++        )
++        return self._request_event("vllm.request.prefill_completed", payload, correlation_quality)
++
++    def request_first_token(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        first_token_ns: int | None = None,
++    ) -> Event:
++        first_token_ns = first_token_ns if first_token_ns is not None else time.monotonic_ns()
++        payload = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++            first_token_ns=first_token_ns,
++        ).to_payload()
++        return self._request_event("vllm.request.first_token", payload, correlation_quality)
++
++    def request_preempted(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        preemption_count: int | None = None,
++    ) -> Event:
++        payload = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++        ).to_payload()
++        payload["preemption_count"] = preemption_count
++        return self._request_event("vllm.request.preempted", payload, correlation_quality)
++
++    def request_finished(
++        self,
++        *,
++        agent_request_id: str | None,
++        vllm_request_id: str | None,
++        correlation_quality: str,
++        received_ns: int | None = None,
++        first_scheduled_ns: int | None = None,
++        prefill_completed_ns: int | None = None,
++        first_token_ns: int | None = None,
++        finished_ns: int | None = None,
++        finish_reason: str | None = None,
++        prompt_tokens: int | None = None,
++        cached_prompt_tokens: int | None = None,
++        computed_prefill_tokens: int | None = None,
++        recomputed_prompt_tokens: int | None = None,
++        generation_tokens: int | None = None,
++        preemption_count: int | None = None,
++    ) -> Event:
++        finished_ns = finished_ns if finished_ns is not None else time.monotonic_ns()
++        payload = RequestMapping(
++            agent_request_id=agent_request_id,
++            vllm_request_id=vllm_request_id,
++            run_id=self.run_id,
++            correlation_quality=correlation_quality,
++            received_ns=received_ns,
++            first_scheduled_ns=first_scheduled_ns,
++            prefill_completed_ns=prefill_completed_ns,
++            first_token_ns=first_token_ns,
++            finished_ns=finished_ns,
++        ).to_payload()
++        payload.update(
++            {
++                "finish_reason": finish_reason,
++                "prompt_tokens": prompt_tokens,
++                "cached_prompt_tokens": cached_prompt_tokens,
++                "computed_prefill_tokens": computed_prefill_tokens,
++                "recomputed_prompt_tokens": recomputed_prompt_tokens,
++                "generation_tokens": generation_tokens,
++                "preemption_count": preemption_count,
++            }
++        )
++        return self._request_event("vllm.request.finished", payload, correlation_quality)
++
++    def adapter_capability(self, *, status: str, details: dict[str, Any] | None = None) -> Event:
++        return self.emit("vllm.adapter.capability", payload={"status": status, "details": details or {}})
++
++    def adapter_error(self, exc: BaseException, *, where: str | None = None) -> Event:
++        payload = exception_fingerprint(exc)
++        if where is not None:
++            payload["where"] = where
++        return self.emit("vllm.adapter.error", payload=payload, quality="partial")
++
++    def kv_snapshot(
++        self,
++        *,
++        prefix_cache_status: str | None = None,
++        prefix_cache_queries: int | None = None,
++        prefix_cache_hits: int | None = None,
++        kv_usage_ratio: float | None = None,
++        pool_inputs: dict[str, Any] | None = None,
++        source: str | None = None,
++    ) -> Event:
++        payload: dict[str, Any] = {
++            "prefix_cache_status": prefix_cache_status,
++            "prefix_cache_queries": prefix_cache_queries,
++            "prefix_cache_hits": prefix_cache_hits,
++            "kv_usage_ratio": kv_usage_ratio,
++        }
++        if pool_inputs is not None:
++            payload["kv_pool"] = calculate_kv_pool(pool_inputs, source=source)
++        return self.emit("vllm.kv.snapshot", payload=payload, quality="exact")
++
++    def kv_block_event(
++        self,
++        *,
++        request_id: str | None = None,
++        allocated_block_count: int | None = None,
++        freed_block_count: int | None = None,
++        evicted_block_count: int | None = None,
++        kv_usage_before: float | None = None,
++        kv_usage_after: float | None = None,
++        kv_quality: str = "exact",
++    ) -> Event:
++        return self.emit(
++            "vllm.kv.block_event",
++            payload={
++                "request_id": request_id,
++                "vllm_request_id": request_id,
++                "allocated_block_count": allocated_block_count,
++                "freed_block_count": freed_block_count,
++                "evicted_block_count": evicted_block_count,
++                "kv_usage_before": kv_usage_before,
++                "kv_usage_after": kv_usage_after,
++                "kv_quality": kv_quality,
++            },
++            quality=kv_quality if kv_quality in {"exact", "estimated"} else "partial",
++        )
++
++    def request_npu_attribution(
++        self,
++        *,
++        vllm_request_id: str | None,
++        agent_request_id: str | None = None,
++        attribution_quality: str,
++        npu_utilization_integral: float | None = None,
++        npu_power_integral: float | None = None,
++        sample_count: int | None = None,
++    ) -> Event:
++        return self.emit(
++            "vllm.request.npu_attribution",
++            payload={
++                "vllm_request_id": vllm_request_id,
++                "agent_request_id": agent_request_id,
++                "attribution_quality": attribution_quality,
++                "npu_utilization_integral": npu_utilization_integral,
++                "npu_power_integral": npu_power_integral,
++                "sample_count": sample_count,
++            },
++            quality="exact" if attribution_quality == "exclusive" else "estimated",
++        )
++
++    def _request_event(self, event_type: str, payload: dict[str, Any], correlation_quality: str) -> Event:
++        return self.emit(
++            event_type,
++            payload=payload,
++            quality=quality_from_correlation(correlation_quality),
++        )
++
++    def next_sequence(self) -> int:
++        with self._lock:
++            self._sequence += 1
++            return self._sequence
++
++    def close(self) -> None:
++        if self._writer is not None:
++            self._writer.close()
++
++
++def quality_from_correlation(correlation_quality: str) -> str:
++    return "exact" if correlation_quality in {"direct", "server_generated"} else "estimated"
+diff --git a/src/agentmon/adapters/vllm_018/hook.py b/src/agentmon/adapters/vllm_018/hook.py
+new file mode 100644
+index 0000000..0c59f72
+--- /dev/null
++++ b/src/agentmon/adapters/vllm_018/hook.py
+@@ -0,0 +1,845 @@
++from __future__ import annotations
++
++import asyncio
++import functools
++import importlib
++import os
++import time
++from typing import Any, Callable
++
++from .events import VllmP2EventSink, quality_from_correlation
++from .version import detected_vllm_version, is_supported_vllm_version
++
++
++ENABLE_ENV = "AGENTMON_VLLM_P2_ENABLE"
++HOT_PATH_ENV = "AGENTMON_VLLM_P2_HOOK_GET_COMPUTED_BLOCKS"
++INSTALLED_ATTR = "__agentmon_p2_wrapped__"
++ORIGINAL_ATTR = "__agentmon_p2_original__"
++
++_INSTALLED = False
++_STATE: "VllmP2HookState | None" = None
++_PATCHED: list[tuple[type, str, Callable[..., Any]]] = []
++
++
++class VllmP2HookState:
++    def __init__(self, sink: VllmP2EventSink | None = None) -> None:
++        self.sink = sink or VllmP2EventSink.from_env()
++        self.seen_received: set[str] = set()
++        self.seen_queued: set[str] = set()
++        self.seen_first_scheduled: set[str] = set()
++        self.seen_first_token: set[str] = set()
++        self.seen_finished: set[str] = set()
++        self.scheduler_stats_depth = 0
++
++    def emit_error(self, exc: BaseException, where: str) -> None:
++        try:
++            self.sink.adapter_error(exc, where=where)
++        except Exception:
++            pass
++
++    def emit_capability(self, status: str, details: dict[str, Any] | None = None) -> None:
++        try:
++            self.sink.adapter_capability(status=status, details=details)
++        except Exception:
++            pass
++
++
++def install_from_env() -> dict[str, Any]:
++    if not truthy(os.environ.get(ENABLE_ENV)):
++        return {"status": "disabled", "reason": f"{ENABLE_ENV} is not truthy"}
++    return install()
++
++
++def install(*, sink: VllmP2EventSink | None = None, force: bool = False) -> dict[str, Any]:
++    global _INSTALLED, _STATE
++    if _INSTALLED and not force:
++        return {"status": "already_installed", "patched": len(_PATCHED)}
++
++    state = VllmP2HookState(sink=sink)
++    version = detected_vllm_version()
++    if not is_supported_vllm_version(version):
++        state.emit_capability(
++            "unsupported",
++            {"detected_vllm_version": version, "target_vllm_version": "0.18.0"},
++        )
++        return {"status": "unsupported", "detected_vllm_version": version}
++
++    _STATE = state
++    patched: list[str] = []
++    skipped: list[str] = []
++
++    for module_name, class_name, specs in hook_targets():
++        cls = resolve_class(module_name, class_name)
++        if cls is None:
++            skipped.append(f"{module_name}:{class_name}")
++            continue
++        for method_name, factory in specs:
++            if patch_method(cls, method_name, factory(state)):
++                patched.append(f"{module_name}:{class_name}.{method_name}")
++            else:
++                skipped.append(f"{module_name}:{class_name}.{method_name}")
++
++    _INSTALLED = True
++    status = "supported" if patched else "partial"
++    state.emit_capability(
++        status,
++        {
++            "detected_vllm_version": version,
++            "patched": patched,
++            "skipped": skipped,
++            "hot_path_get_computed_blocks": truthy(os.environ.get(HOT_PATH_ENV)),
++        },
++    )
++    return {"status": status, "detected_vllm_version": version, "patched": patched, "skipped": skipped}
++
++
++def uninstall_for_tests() -> None:
++    global _INSTALLED, _STATE
++    for cls, method_name, original in reversed(_PATCHED):
++        setattr(cls, method_name, original)
++    _PATCHED.clear()
++    _INSTALLED = False
++    _STATE = None
++
++
++def hook_targets() -> list[tuple[str, str, list[tuple[str, Callable[[VllmP2HookState], Callable[..., Any]]]]]]:
++    targets: list[tuple[str, str, list[tuple[str, Callable[[VllmP2HookState], Callable[..., Any]]]]]] = [
++        (
++            "vllm.v1.engine.async_llm",
++            "AsyncLLMEngine",
++            [
++                ("add_request", wrap_async_add_request),
++                ("generate", wrap_async_generate),
++                ("abort", wrap_async_abort),
++            ],
++        ),
++        (
++            "vllm.v1.engine.llm_engine",
++            "LLMEngine",
++            [
++                ("add_request", wrap_llm_add_request),
++                ("step", wrap_llm_step),
++            ],
++        ),
++        (
++            "vllm.v1.engine.core",
++            "EngineCore",
++            [
++                ("add_request", wrap_engine_core_add_request),
++                ("step", wrap_engine_core_step),
++            ],
++        ),
++        (
++            "vllm.v1.core.sched.scheduler",
++            "Scheduler",
++            [
++                ("__init__", wrap_scheduler_init),
++                ("add_request", wrap_scheduler_add_request),
++                ("schedule", wrap_scheduler_schedule),
++                ("make_stats", wrap_scheduler_make_stats),
++            ],
++        ),
++        (
++            "vllm.v1.core.kv_cache_manager",
++            "KVCacheManager",
++            [
++                ("__init__", wrap_kv_manager_init),
++                ("make_prefix_cache_stats", wrap_kv_make_prefix_cache_stats),
++            ],
++        ),
++    ]
++    if truthy(os.environ.get(HOT_PATH_ENV)):
++        targets[-1][2].append(("get_computed_blocks", wrap_kv_get_computed_blocks))
++    return targets
++
++
++def resolve_class(module_name: str, class_name: str) -> type | None:
++    try:
++        module = importlib.import_module(module_name)
++        cls = getattr(module, class_name)
++    except Exception as exc:
++        state = _STATE
++        if state is not None:
++            state.emit_error(exc, f"resolve:{module_name}:{class_name}")
++        return None
++    return cls if isinstance(cls, type) else None
++
++
++def patch_method(cls: type, method_name: str, wrapper_factory: Callable[[Callable[..., Any]], Callable[..., Any]]) -> bool:
++    original = getattr(cls, method_name, None)
++    if original is None or getattr(original, INSTALLED_ATTR, False):
++        return False
++    wrapper = wrapper_factory(original)
++    setattr(wrapper, INSTALLED_ATTR, True)
++    setattr(wrapper, ORIGINAL_ATTR, original)
++    setattr(cls, method_name, wrapper)
++    _PATCHED.append((cls, method_name, original))
++    return True
++
++
++def wrap_async_add_request(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            received_ns = time.monotonic_ns()
++            result = await original(self, *args, **kwargs)
++            request_id = getattr(result, "request_id", None) or request_id_from_call(args, kwargs)
++            emit_received(
++                state,
++                request_id=request_id,
++                agent_request_id=agent_request_id_from_headers(kwargs.get("trace_headers")),
++                received_ns=received_ns,
++                model_name=model_name_from_engine(self),
++            )
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_async_generate(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            request_id = request_id_from_generate_call(args, kwargs)
++            agent_request_id = agent_request_id_from_headers(kwargs.get("trace_headers"))
++            try:
++                async for output in original(self, *args, **kwargs):
++                    try:
++                        observe_request_output(
++                            state,
++                            output,
++                            agent_request_id=agent_request_id,
++                            fallback_request_id=request_id,
++                        )
++                    except Exception as exc:
++                        state.emit_error(exc, "AsyncLLMEngine.generate.observe")
++                    yield output
++            except (asyncio.CancelledError, GeneratorExit):
++                emit_cancelled(state, request_id, agent_request_id=agent_request_id)
++                raise
++
++        return wrapper
++
++    return factory
++
++
++def wrap_async_abort(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        async def wrapper(self: Any, request_id: Any, *args: Any, **kwargs: Any) -> Any:
++            result = await original(self, request_id, *args, **kwargs)
++            try:
++                for item in as_request_ids(request_id):
++                    emit_cancelled(state, item)
++            except Exception as exc:
++                state.emit_error(exc, "AsyncLLMEngine.abort.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_llm_add_request(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            received_ns = time.monotonic_ns()
++            result = original(self, *args, **kwargs)
++            emit_received(
++                state,
++                request_id=str(result) if result is not None else request_id_from_call(args, kwargs),
++                agent_request_id=agent_request_id_from_headers(kwargs.get("trace_headers")),
++                received_ns=received_ns,
++                model_name=model_name_from_engine(self),
++            )
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_llm_step(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, *args, **kwargs)
++            try:
++                for output in result or []:
++                    observe_request_output(state, output)
++            except Exception as exc:
++                state.emit_error(exc, "LLMEngine.step.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_engine_core_add_request(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, request: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, request, *args, **kwargs)
++            emit_queued_from_request(state, request)
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_engine_core_step(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, *args, **kwargs)
++            try:
++                outputs_by_rank = result[0] if isinstance(result, tuple) and result else {}
++                for item in getattr(outputs_by_rank, "values", lambda: [])():
++                    observe_engine_core_outputs(state, item)
++            except Exception as exc:
++                state.emit_error(exc, "EngineCore.step.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_scheduler_init(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, *args, **kwargs)
++            try:
++                emit_scheduler_kv_config(state, self)
++            except Exception as exc:
++                state.emit_error(exc, "Scheduler.__init__.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_scheduler_add_request(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, request: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, request, *args, **kwargs)
++            emit_queued_from_request(state, request)
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_scheduler_schedule(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, *args, **kwargs)
++            try:
++                observe_scheduler_output(state, result)
++            except Exception as exc:
++                state.emit_error(exc, "Scheduler.schedule.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_scheduler_make_stats(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            state.scheduler_stats_depth += 1
++            try:
++                result = original(self, *args, **kwargs)
++            finally:
++                state.scheduler_stats_depth -= 1
++            try:
++                observe_scheduler_stats(state, result, prefix_cache_status=prefix_status_from_scheduler(self))
++            except Exception as exc:
++                state.emit_error(exc, "Scheduler.make_stats.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_kv_manager_init(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, *args, **kwargs)
++            try:
++                status = "enabled" if getattr(self, "enable_caching", None) else "disabled"
++                state.sink.kv_snapshot(prefix_cache_status=status, source="kv_cache_manager")
++            except Exception as exc:
++                state.emit_error(exc, "KVCacheManager.__init__.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_kv_make_prefix_cache_stats(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, *args, **kwargs)
++            if state.scheduler_stats_depth > 0:
++                return result
++            try:
++                observe_prefix_cache_stats(
++                    state,
++                    result,
++                    prefix_cache_status="enabled" if getattr(self, "enable_caching", None) else "disabled",
++                    kv_usage_ratio=getattr(self, "usage", None),
++                )
++            except Exception as exc:
++                state.emit_error(exc, "KVCacheManager.make_prefix_cache_stats.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def wrap_kv_get_computed_blocks(state: VllmP2HookState) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++    def factory(original: Callable[..., Any]) -> Callable[..., Any]:
++        @functools.wraps(original)
++        def wrapper(self: Any, request: Any, *args: Any, **kwargs: Any) -> Any:
++            result = original(self, request, *args, **kwargs)
++            try:
++                num_cached = result[1] if isinstance(result, tuple) and len(result) > 1 else None
++                emit_prefill_from_request(state, request, cached_prompt_tokens=num_cached)
++            except Exception as exc:
++                state.emit_error(exc, "KVCacheManager.get_computed_blocks.observe")
++            return result
++
++        return wrapper
++
++    return factory
++
++
++def emit_received(
++    state: VllmP2HookState,
++    *,
++    request_id: Any,
++    agent_request_id: str | None,
++    received_ns: int,
++    model_name: str | None = None,
++) -> None:
++    req_id = none_if_empty(request_id)
++    if req_id is None or req_id in state.seen_received:
++        return
++    state.seen_received.add(req_id)
++    try:
++        state.sink.request_received(
++            agent_request_id=agent_request_id,
++            vllm_request_id=req_id,
++            correlation_quality="direct" if agent_request_id else "server_generated",
++            received_ns=received_ns,
++            model_name=model_name,
++        )
++    except Exception as exc:
++        state.emit_error(exc, "emit_received")
++
++
++def emit_queued_from_request(state: VllmP2HookState, request: Any) -> None:
++    req_id = none_if_empty(getattr(request, "request_id", None))
++    if req_id is None or req_id in state.seen_queued:
++        return
++    state.seen_queued.add(req_id)
++    payload = request_payload(request)
++    payload.update({"queued_ns": time.monotonic_ns()})
++    emit_request_payload(state, "vllm.request.queued", payload)
++
++
++def emit_prefill_from_request(state: VllmP2HookState, request: Any, *, cached_prompt_tokens: Any = None) -> None:
++    payload = request_payload(request)
++    payload.update(
++        {
++            "prefill_completed_ns": time.monotonic_ns(),
++            "cached_prompt_tokens": numeric_or_none(cached_prompt_tokens),
++        }
++    )
++    emit_request_payload(state, "vllm.request.prefill_completed", payload)
++
++
++def observe_request_output(
++    state: VllmP2HookState,
++    output: Any,
++    *,
++    agent_request_id: str | None = None,
++    fallback_request_id: str | None = None,
++) -> None:
++    req_id = none_if_empty(getattr(output, "request_id", None) or fallback_request_id)
++    if req_id is None:
++        return
++    generation_tokens = generation_token_count(output)
++    if generation_tokens and req_id not in state.seen_first_token:
++        state.seen_first_token.add(req_id)
++        emit_request_payload(
++            state,
++            "vllm.request.first_token",
++            {
++                "agent_request_id": agent_request_id,
++                "vllm_request_id": req_id,
++                "correlation_quality": "direct" if agent_request_id else "server_generated",
++                "first_token_ns": time.monotonic_ns(),
++            },
++        )
++    if bool(getattr(output, "finished", False)) and req_id not in state.seen_finished:
++        state.seen_finished.add(req_id)
++        emit_request_payload(
++            state,
++            "vllm.request.finished",
++            {
++                "agent_request_id": agent_request_id,
++                "vllm_request_id": req_id,
++                "correlation_quality": "direct" if agent_request_id else "server_generated",
++                "finished_ns": time.monotonic_ns(),
++                "finish_reason": finish_reason_from_output(output),
++                "prompt_tokens": prompt_token_count(output),
++                "cached_prompt_tokens": numeric_or_none(getattr(output, "num_cached_tokens", None)),
++                "generation_tokens": generation_tokens,
++            },
++        )
++
++
++def observe_engine_core_outputs(state: VllmP2HookState, outputs: Any) -> None:
++    scheduler_stats = getattr(outputs, "scheduler_stats", None)
++    if scheduler_stats is not None:
++        observe_scheduler_stats(state, scheduler_stats)
++    for output in getattr(outputs, "outputs", []) or []:
++        req_id = none_if_empty(getattr(output, "request_id", None))
++        if req_id and bool(getattr(output, "finished", False)) and req_id not in state.seen_finished:
++            state.seen_finished.add(req_id)
++            emit_request_payload(
++                state,
++                "vllm.request.finished",
++                {
++                    "vllm_request_id": req_id,
++                    "correlation_quality": "server_generated",
++                    "finished_ns": time.monotonic_ns(),
++                    "finish_reason": safe_str(getattr(output, "finish_reason", None)),
++                    "cached_prompt_tokens": numeric_or_none(getattr(output, "num_cached_tokens", None)),
++                },
++            )
++
++
++def observe_scheduler_output(state: VllmP2HookState, output: Any) -> None:
++    for item in getattr(output, "scheduled_new_reqs", []) or []:
++        req_id = none_if_empty(getattr(item, "req_id", None))
++        if req_id and req_id not in state.seen_first_scheduled:
++            state.seen_first_scheduled.add(req_id)
++            emit_request_payload(
++                state,
++                "vllm.request.first_scheduled",
++                {
++                    "vllm_request_id": req_id,
++                    "correlation_quality": "server_generated",
++                    "first_scheduled_ns": time.monotonic_ns(),
++                    "prompt_tokens": sequence_length(getattr(item, "prompt_token_ids", None)),
++                    "computed_prefill_tokens": numeric_or_none(getattr(item, "num_computed_tokens", None)),
++                },
++            )
++    for req_id in getattr(output, "preempted_req_ids", None) or []:
++        emit_request_payload(
++            state,
++            "vllm.request.preempted",
++            {
++                "vllm_request_id": none_if_empty(req_id),
++                "correlation_quality": "server_generated",
++                "preemption_count": 1,
++            },
++        )
++
++
++def observe_scheduler_stats(
++    state: VllmP2HookState,
++    stats: Any,
++    *,
++    prefix_cache_status: str | None = None,
++) -> None:
++    if stats is None:
++        return
++    prefix_status = prefix_cache_status or "enabled"
++    observe_prefix_cache_stats(
++        state,
++        getattr(stats, "prefix_cache_stats", None),
++        prefix_cache_status=prefix_status,
++        kv_usage_ratio=getattr(stats, "kv_cache_usage", None),
++    )
++    eviction_events = getattr(stats, "kv_cache_eviction_events", None) or []
++    for event in eviction_events:
++        state.sink.kv_block_event(
++            evicted_block_count=sequence_length(getattr(event, "block_ids", None)),
++            kv_quality="exact",
++        )
++
++
++def observe_prefix_cache_stats(
++    state: VllmP2HookState,
++    stats: Any,
++    *,
++    prefix_cache_status: str,
++    kv_usage_ratio: Any = None,
++) -> None:
++    queries = numeric_or_none(getattr(stats, "queries", None)) if stats is not None else None
++    hits = numeric_or_none(getattr(stats, "hits", None)) if stats is not None else None
++    if prefix_cache_status == "disabled":
++        queries = None
++        hits = None
++    state.sink.kv_snapshot(
++        prefix_cache_status=prefix_cache_status,
++        prefix_cache_queries=queries,
++        prefix_cache_hits=hits,
++        kv_usage_ratio=numeric_or_none(kv_usage_ratio),
++        source="scheduler_stats",
++    )
++
++
++def emit_scheduler_kv_config(state: VllmP2HookState, scheduler: Any) -> None:
++    cache_config = getattr(scheduler, "cache_config", None)
++    status = "enabled" if getattr(cache_config, "enable_prefix_caching", None) else "disabled"
++    pool_inputs = kv_pool_inputs_from_scheduler(scheduler)
++    state.sink.kv_snapshot(
++        prefix_cache_status=status,
++        pool_inputs=pool_inputs if any(value is not None for value in pool_inputs.values()) else None,
++        source="scheduler_config",
++    )
++
++
++def emit_cancelled(state: VllmP2HookState, request_id: Any, *, agent_request_id: str | None = None) -> None:
++    for req_id in as_request_ids(request_id):
++        emit_request_payload(
++            state,
++            "vllm.request.cancelled",
++            {
++                "agent_request_id": agent_request_id,
++                "vllm_request_id": req_id,
++                "correlation_quality": "direct" if agent_request_id else "server_generated",
++                "finished_ns": time.monotonic_ns(),
++                "finish_reason": "cancelled",
++            },
++        )
++
++
++def emit_request_payload(state: VllmP2HookState, event_type: str, payload: dict[str, Any]) -> None:
++    try:
++        quality = quality_from_correlation(str(payload.get("correlation_quality") or "server_generated"))
++        state.sink.emit(event_type, payload=payload, quality=quality)
++    except Exception as exc:
++        state.emit_error(exc, f"emit:{event_type}")
++
++
++def request_payload(request: Any) -> dict[str, Any]:
++    trace_headers = getattr(request, "trace_headers", None)
++    agent_request_id = agent_request_id_from_headers(trace_headers)
++    prompt_tokens = numeric_or_none(getattr(request, "num_prompt_tokens", None))
++    cached_tokens = numeric_or_none(getattr(request, "num_cached_tokens", None))
++    if cached_tokens is not None and cached_tokens < 0:
++        cached_tokens = None
++    return {
++        "agent_request_id": agent_request_id,
++        "vllm_request_id": none_if_empty(getattr(request, "request_id", None)),
++        "correlation_quality": "direct" if agent_request_id else "server_generated",
++        "prompt_tokens": prompt_tokens,
++        "cached_prompt_tokens": cached_tokens,
++        "computed_prefill_tokens": numeric_or_none(getattr(request, "num_computed_tokens", None)),
++        "preemption_count": numeric_or_none(getattr(request, "num_preemptions", None)),
++    }
++
++
++def kv_pool_inputs_from_scheduler(scheduler: Any) -> dict[str, Any]:
++    cache_config = getattr(scheduler, "cache_config", None)
++    model_config = getattr(scheduler, "vllm_config", None)
++    model_config = getattr(model_config, "model_config", None)
++    parallel_config = getattr(scheduler, "parallel_config", None)
++    return {
++        "num_gpu_blocks": getattr(cache_config, "num_gpu_blocks", None),
++        "block_size": getattr(scheduler, "block_size", None) or getattr(cache_config, "block_size", None),
++        "cache_dtype": getattr(cache_config, "cache_dtype", None),
++        "num_layers_per_rank": safe_model_value(model_config, "get_num_layers_by_block_type", parallel_config),
++        "num_kv_heads_per_rank": first_present(
++            safe_model_value(model_config, "get_num_kv_heads", parallel_config),
++            attr_chain(model_config, ("hf_config", "num_key_value_heads")),
++            attr_chain(model_config, ("hf_text_config", "num_key_value_heads")),
++        ),
++        "head_dim": first_present(
++            safe_model_value(model_config, "get_head_size"),
++            attr_chain(model_config, ("hf_config", "head_dim")),
++            attr_chain(model_config, ("hf_text_config", "head_dim")),
++        ),
++    }
++
++
++def prefix_status_from_scheduler(scheduler: Any) -> str:
++    cache_config = getattr(scheduler, "cache_config", None)
++    if getattr(cache_config, "enable_prefix_caching", None):
++        return "enabled"
++    return "disabled"
++
++
++def agent_request_id_from_headers(headers: Any) -> str | None:
++    if not headers:
++        return None
++    try:
++        items = headers.items()
++    except AttributeError:
++        return None
++    normalized = {str(key).lower().replace("_", "-"): value for key, value in items}
++    for key in (
++        "x-agentmon-request-id",
++        "agentmon-request-id",
++        "agentmon-model-request-id",
++        "x-agentmon-model-request-id",
++    ):
++        value = normalized.get(key)
++        if value not in {None, ""}:
++            return str(value)
++    return None
++
++
++def request_id_from_call(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str | None:
++    value = kwargs.get("request_id")
++    if value is None and args:
++        value = args[0]
++    return none_if_empty(value)
++
++
++def request_id_from_generate_call(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str | None:
++    value = kwargs.get("request_id")
++    if value is None and len(args) >= 3:
++        value = args[2]
++    return none_if_empty(value)
++
++
++def as_request_ids(value: Any) -> list[str]:
++    if isinstance(value, str):
++        return [value]
++    try:
++        return [str(item) for item in value if item not in {None, ""}]
++    except TypeError:
++        text = none_if_empty(value)
++        return [text] if text else []
++
++
++def generation_token_count(output: Any) -> int | None:
++    completions = getattr(output, "outputs", None)
++    if completions is None:
++        return None
++    total = 0
++    found = False
++    for item in completions:
++        token_ids = getattr(item, "token_ids", None)
++        length = sequence_length(token_ids)
++        if length is not None:
++            total += length
++            found = True
++    return total if found else None
++
++
++def prompt_token_count(output: Any) -> int | None:
++    return sequence_length(getattr(output, "prompt_token_ids", None))
++
++
++def finish_reason_from_output(output: Any) -> str | None:
++    completions = getattr(output, "outputs", None) or []
++    for item in completions:
++        reason = getattr(item, "finish_reason", None)
++        if reason is not None:
++            return safe_str(reason)
++    return safe_str(getattr(output, "finish_reason", None))
++
++
++def model_name_from_engine(engine: Any) -> str | None:
++    model_config = getattr(engine, "model_config", None)
++    return none_if_empty(
++        first_present(
++            getattr(model_config, "served_model_name", None),
++            getattr(model_config, "model", None),
++        )
++    )
++
++
++def safe_model_value(model_config: Any, method_name: str, *args: Any) -> Any:
++    method = getattr(model_config, method_name, None)
++    if method is None:
++        return None
++    try:
++        return method(*[arg for arg in args if arg is not None])
++    except Exception:
++        try:
++            return method()
++        except Exception:
++            return None
++
++
++def attr_chain(obj: Any, names: tuple[str, ...]) -> Any:
++    value = obj
++    for name in names:
++        value = getattr(value, name, None)
++        if value is None:
++            return None
++    return value
++
++
++def first_present(*values: Any) -> Any:
++    for value in values:
++        if value is not None and not (isinstance(value, str) and value == ""):
++            return value
++    return None
++
++
++def sequence_length(value: Any) -> int | None:
++    if value is None:
++        return None
++    try:
++        return len(value)
++    except TypeError:
++        return None
++
++
++def numeric_or_none(value: Any) -> int | float | None:
++    if value is None or (isinstance(value, str) and value == ""):
++        return None
++    if isinstance(value, bool):
++        return int(value)
++    if isinstance(value, (int, float)):
++        return value
++    try:
++        return int(value)
++    except (TypeError, ValueError):
++        try:
++            return float(value)
++        except (TypeError, ValueError):
++            return None
++
++
++def none_if_empty(value: Any) -> str | None:
++    if value is None or (isinstance(value, str) and value == ""):
++        return None
++    return str(value)
++
++
++def safe_str(value: Any) -> str | None:
++    if value is None:
++        return None
++    return str(value)
++
++
++def truthy(value: Any) -> bool:
++    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+diff --git a/src/agentmon/adapters/vllm_018/kv.py b/src/agentmon/adapters/vllm_018/kv.py
+new file mode 100644
+index 0000000..61c4922
+--- /dev/null
++++ b/src/agentmon/adapters/vllm_018/kv.py
+@@ -0,0 +1,72 @@
++from __future__ import annotations
++
++from typing import Any
++
++
++FORMULA_VERSION = "kv_pool_bytes_per_rank.v1"
++
++DTYPE_BYTES = {
++    "auto": None,
++    "bfloat16": 2,
++    "bf16": 2,
++    "float16": 2,
++    "fp16": 2,
++    "float32": 4,
++    "fp32": 4,
++    "fp8": 1,
++    "fp8_e4m3": 1,
++    "fp8_e5m2": 1,
++}
++
++REQUIRED_POOL_INPUTS = [
++    "num_gpu_blocks",
++    "block_size",
++    "cache_dtype",
++    "num_layers_per_rank",
++    "num_kv_heads_per_rank",
++    "head_dim",
++]
++
++
++def calculate_kv_pool(inputs: dict[str, Any], *, source: str | None = None) -> dict[str, Any]:
++    normalized = dict(inputs)
++    missing = [key for key in REQUIRED_POOL_INPUTS if normalized.get(key) in {None, ""}]
++    dtype_bytes = cache_dtype_bytes(normalized.get("cache_dtype"))
++    if dtype_bytes is None and "cache_dtype" not in missing:
++        missing.append("cache_dtype_bytes")
++    result = {
++        "formula_version": FORMULA_VERSION,
++        "source": source or normalized.get("source"),
++        "source_quality": "complete" if not missing else "partial",
++        "calculation_inputs": {key: normalized.get(key) for key in REQUIRED_POOL_INPUTS},
++        "dtype_bytes": dtype_bytes,
++        "missing_inputs": missing,
++        "bytes_per_block_per_rank": None,
++        "allocated_pool_bytes_per_rank": None,
++    }
++    if missing:
++        return result
++    try:
++        bytes_per_block = (
++            int(normalized["block_size"])
++            * int(normalized["num_layers_per_rank"])
++            * int(normalized["num_kv_heads_per_rank"])
++            * int(normalized["head_dim"])
++            * 2
++            * int(dtype_bytes)
++        )
++        result["bytes_per_block_per_rank"] = bytes_per_block
++        result["allocated_pool_bytes_per_rank"] = int(normalized["num_gpu_blocks"]) * bytes_per_block
++        result["source_quality"] = "complete"
++        return result
++    except (TypeError, ValueError) as exc:
++        result["source_quality"] = "partial"
++        result["missing_inputs"] = [*missing, f"invalid_input:{type(exc).__name__}"]
++        return result
++
++
++def cache_dtype_bytes(dtype: Any) -> int | None:
++    if dtype is None:
++        return None
++    text = str(dtype).lower().replace("torch.", "")
++    return DTYPE_BYTES.get(text)
+diff --git a/src/agentmon/adapters/vllm_018/version.py b/src/agentmon/adapters/vllm_018/version.py
+new file mode 100644
+index 0000000..c1c8ff9
+--- /dev/null
++++ b/src/agentmon/adapters/vllm_018/version.py
+@@ -0,0 +1,44 @@
++from __future__ import annotations
++
++import importlib
++import importlib.metadata
++from typing import Any
++
++
++SUPPORTED_VLLM_VERSION = "0.18.0"
++
++
++class UnsupportedVllmVersion(RuntimeError):
++    pass
++
++
++def base_version(version: Any) -> str | None:
++    if version in {None, ""}:
++        return None
++    return str(version).split("+", 1)[0]
++
++
++def is_supported_vllm_version(version: Any) -> bool:
++    return base_version(version) == SUPPORTED_VLLM_VERSION
++
++
++def detected_vllm_version() -> str | None:
++    try:
++        return importlib.metadata.version("vllm")
++    except importlib.metadata.PackageNotFoundError:
++        pass
++    try:
++        module = importlib.import_module("vllm")
++    except Exception:
++        return None
++    value = getattr(module, "__version__", None)
++    return str(value) if value is not None else None
++
++
++def require_supported_vllm_version(version: Any = None) -> str:
++    detected = detected_vllm_version() if version is None else str(version)
++    if not is_supported_vllm_version(detected):
++        raise UnsupportedVllmVersion(
++            f"AgentMon P2 supports vLLM {SUPPORTED_VLLM_VERSION}; detected {detected or 'unknown'}"
++        )
++    return detected
+diff --git a/src/agentmon/cli.py b/src/agentmon/cli.py
+index 585f537..2fee9c0 100644
+--- a/src/agentmon/cli.py
++++ b/src/agentmon/cli.py
+@@ -12,6 +12,7 @@ from . import __version__
+ from .config import ConfigError, load_config
+ from .doctor import run_doctor
+ from .events import Event
++from .experiments.prefix_cache import format_prefix_cache_plan_table, plan_prefix_cache_experiment, plan_to_json
+ from .paths import find_run_dir, output_root
+ from .reporting.report import (
+     build_report,
+@@ -97,6 +98,16 @@ def build_parser() -> argparse.ArgumentParser:
+     aggregate.add_argument("--started-before", help="include runs starting at or before this epoch seconds/ns timestamp")
+     aggregate.add_argument("--format", choices=["table", "json", "csv"], default="table")
+     aggregate.add_argument("--strict", action="store_true", help="exit non-zero if any included run violates strict checks")
++
++    experiment = subparsers.add_parser("experiment", help="plan and inspect controlled experiments")
++    experiment_subparsers = experiment.add_subparsers(dest="experiment_command")
++    plan = experiment_subparsers.add_parser("plan", help="create a non-mutating experiment plan")
++    plan_subparsers = plan.add_subparsers(dest="plan_type")
++    prefix_cache = plan_subparsers.add_parser("prefix-cache", help="plan a prefix-cache A/B experiment")
++    add_config_args(prefix_cache)
++    prefix_cache.add_argument("--baseline-run", action="append", required=True, help="baseline AgentMon run id")
++    prefix_cache.add_argument("--variant-config", required=True, help="candidate config for the variant condition")
++    prefix_cache.add_argument("--format", choices=["json", "table"], default="json")
+     return parser
+ 
+ 
+@@ -126,6 +137,8 @@ def main(argv: Sequence[str] | None = None) -> int:
+         return _summary(args)
+     if args.command == "aggregate":
+         return _aggregate(args)
++    if args.command == "experiment":
++        return _experiment(args)
+ 
+     parser.print_help()
+     return 0
+@@ -269,6 +282,33 @@ def _aggregate(args: argparse.Namespace) -> int:
+     return 1 if args.strict and aggregate.get("strict_failure_run_count") else 0
+ 
+ 
++def _experiment(args: argparse.Namespace) -> int:
++    if args.experiment_command == "plan" and args.plan_type == "prefix-cache":
++        return _experiment_plan_prefix_cache(args)
++    print("agentmon experiment requires a supported subcommand", file=sys.stderr)
++    return 64
++
++
++def _experiment_plan_prefix_cache(args: argparse.Namespace) -> int:
++    try:
++        cfg = _load_cfg(args)
++        reports = [load_report_for_run(find_run_dir(cfg, run_id)) for run_id in args.baseline_run]
++        summaries = [build_run_summary(report) for report in reports]
++        plan = plan_prefix_cache_experiment(
++            baseline_reports=reports,
++            baseline_summaries=summaries,
++            variant_config=args.variant_config,
++        )
++    except Exception as exc:
++        print(f"agentmon experiment plan prefix-cache error: {exc}", file=sys.stderr)
++        return 2
++    if args.format == "table":
++        print(format_prefix_cache_plan_table(plan))
++    else:
++        print(plan_to_json(plan))
++    return 0
++
++
+ def _compare(args: argparse.Namespace) -> int:
+     try:
+         cfg = _load_cfg(args)
+@@ -310,6 +350,7 @@ def parse_text_report(text: str) -> dict[str, object]:
+         "P1 Spans": "p1_spans",
+         "Tool Attribution": "tool_attribution",
+         "vLLM": "vllm",
++        "vLLM P2": "vllm_p2",
+         "KV Cache": "kv_cache",
+         "Proc": "proc",
+         "Ascend": "ascend",
+diff --git a/src/agentmon/doctor.py b/src/agentmon/doctor.py
+index f8c3952..1da16eb 100644
+--- a/src/agentmon/doctor.py
++++ b/src/agentmon/doctor.py
+@@ -38,6 +38,7 @@ def run_doctor(cfg: AgentMonConfig, *, output: str | Path | None = None) -> tupl
+     capabilities.append(probe_vllm(cfg, raw_dir))
+     capabilities.append(probe_mini_swe(cfg, raw_dir))
+     capabilities.append(probe_p1(cfg, raw_dir))
++    capabilities.append(probe_p2(cfg, raw_dir))
+ 
+     status = summarize_status([cap.status for cap in capabilities])
+     report = {
+@@ -284,6 +285,36 @@ for cls in (InstrumentedInteractiveAgent, InstrumentedLitellmModel, Instrumented
+     return Capability("p1", status, detail)
+ 
+ 
++def probe_p2(cfg: AgentMonConfig, raw_dir: Path | None) -> Capability:
++    detail: dict[str, Any] = {
++        "target_vllm_version": "0.18.0",
++        "runtime_hook_loaded_by_default": False,
++        "scope": "contract_and_discovery_only",
++    }
++    try:
++        from agentmon.adapters.vllm_018.events import VllmP2EventSink
++        from agentmon.adapters.vllm_018.version import detected_vllm_version, is_supported_vllm_version
++
++        event = VllmP2EventSink(run_id="doctor-p2-probe").adapter_capability(status="dry_run")
++        detected = detected_vllm_version()
++        detail["adapter_contract_import"] = "supported"
++        detail["dry_run_event_type"] = event.event_type
++        detail["detected_vllm_version"] = detected
++        detail["vllm_version_supported"] = is_supported_vllm_version(detected)
++    except Exception as exc:
++        return Capability("p2", "unsupported", {**detail, "error": str(exc), "error_type": type(exc).__name__})
++
++    script_path = Path(__file__).resolve().parents[2] / "scripts" / "agentmon_p2_discovery.py"
++    detail["discovery_script"] = {"path": str(script_path), "exists": script_path.exists()}
++    if detail["vllm_version_supported"]:
++        status = "supported"
++    elif detail["detected_vllm_version"] is None:
++        status = "not_found"
++    else:
++        status = "partial"
++    return Capability("p2", status, detail)
++
++
+ def run_command(
+     argv: list[str],
+     *,
+diff --git a/src/agentmon/experiments/__init__.py b/src/agentmon/experiments/__init__.py
+new file mode 100644
+index 0000000..72f00f7
+--- /dev/null
++++ b/src/agentmon/experiments/__init__.py
+@@ -0,0 +1 @@
++"""Experiment planning helpers."""
+diff --git a/src/agentmon/experiments/prefix_cache.py b/src/agentmon/experiments/prefix_cache.py
+new file mode 100644
+index 0000000..78c1a38
+--- /dev/null
++++ b/src/agentmon/experiments/prefix_cache.py
+@@ -0,0 +1,162 @@
++from __future__ import annotations
++
++import hashlib
++import json
++from pathlib import Path
++from typing import Any
++
++
++SCHEMA_VERSION = "1.0"
++
++
++def plan_prefix_cache_experiment(
++    *,
++    baseline_reports: list[dict[str, Any]],
++    baseline_summaries: list[dict[str, Any]],
++    variant_config: str | Path,
++) -> dict[str, Any]:
++    variant = variant_config_snapshot(variant_config)
++    baseline_runs = [
++        {
++            "run_id": summary.get("run_id"),
++            "label": summary.get("label"),
++            "run_status": summary.get("run_status"),
++            "task_success": summary.get("task_success"),
++            "prefix_cache_status": summary.get("prefix_cache_status"),
++            "p2_kv_prefix_cache_status": summary.get("p2_kv_prefix_cache_status"),
++            "model_requests": summary.get("model_requests"),
++            "p2_request_count": summary.get("p2_request_count"),
++            "duration_seconds": summary.get("duration_seconds"),
++            "request_ttft_mean": nested(summary, "p2_ttft_latency.mean"),
++            "request_prefill_mean": nested(summary, "p2_prefill_latency.mean"),
++            "request_decode_mean": nested(summary, "p2_decode_latency.mean"),
++            "request_e2e_mean": nested(summary, "p2_e2e_latency.mean"),
++            "kv_usage_ratio_max": summary.get("kv_cache_usage_ratio_max"),
++            "p2_preemption_count": summary.get("p2_preemption_count"),
++        }
++        for summary in baseline_summaries
++    ]
++    checks = build_checks(baseline_reports, baseline_summaries, variant)
++    return {
++        "schema_version": SCHEMA_VERSION,
++        "experiment_type": "prefix-cache",
++        "planner": "agentmon.prefix_cache_ab.v1",
++        "status": "ready" if all(check["status"] == "pass" for check in checks) else "needs_attention",
++        "mutates_service": False,
++        "baseline_run_count": len(baseline_summaries),
++        "baseline_runs": baseline_runs,
++        "variant_config": variant,
++        "checks": checks,
++        "required_matrix": {
++            "conditions": ["prefix_cache_disabled", "prefix_cache_enabled"],
++            "cache_temperature": ["cold", "warm"],
++            "minimum_repetitions_per_condition": 3,
++            "same_task_set_required": True,
++            "same_service_parameters_required_except_prefix_cache": True,
++        },
++        "metrics_to_compare": [
++            "task_success",
++            "request_ttft_mean",
++            "request_prefill_mean",
++            "request_decode_mean",
++            "request_e2e_mean",
++            "p2_cached_prompt_tokens",
++            "p2_computed_prefill_tokens",
++            "p2_recomputed_prompt_tokens",
++            "kv_cache_usage_ratio_max",
++            "p2_preemption_count",
++        ],
++        "notes": [
++            "This planner does not restart or reconfigure vLLM.",
++            "Run disabled and enabled conditions under the same model and serving limits.",
++            "Separate cold-cache from warm-cache repetitions.",
++        ],
++    }
++
++
++def variant_config_snapshot(path: str | Path) -> dict[str, Any]:
++    config_path = Path(path).expanduser()
++    if not config_path.exists():
++        return {"path": str(config_path), "exists": False, "sha256": None, "prefix_cache_hint": "unknown"}
++    data = config_path.read_bytes()
++    text = data.decode("utf-8", errors="replace")
++    return {
++        "path": str(config_path),
++        "exists": True,
++        "sha256": hashlib.sha256(data).hexdigest(),
++        "bytes": len(data),
++        "prefix_cache_hint": detect_prefix_cache_hint(text),
++    }
++
++
++def detect_prefix_cache_hint(text: str) -> str:
++    lowered = text.lower()
++    if "no-enable-prefix-caching" in lowered or "prefix_caching = \"disabled\"" in lowered:
++        return "disabled"
++    if "enable-prefix-caching" in lowered or "prefix_caching = \"enabled\"" in lowered:
++        return "enabled"
++    return "unknown"
++
++
++def build_checks(
++    baseline_reports: list[dict[str, Any]],
++    baseline_summaries: list[dict[str, Any]],
++    variant: dict[str, Any],
++) -> list[dict[str, Any]]:
++    labels = {summary.get("label") for summary in baseline_summaries if summary.get("label") is not None}
++    model_names = {
++        nested(report, "manifest.model_name") or nested(report, "agent.model_name")
++        for report in baseline_reports
++        if nested(report, "manifest.model_name") or nested(report, "agent.model_name")
++    }
++    prefix_statuses = {summary.get("prefix_cache_status") for summary in baseline_summaries}
++    return [
++        check("baseline_runs_present", bool(baseline_summaries), "at least one baseline run is required"),
++        check("variant_config_exists", bool(variant.get("exists")), "variant config file should exist"),
++        check(
++            "variant_mentions_prefix_cache",
++            variant.get("prefix_cache_hint") in {"enabled", "disabled"},
++            "variant config should explicitly mention prefix cache state",
++        ),
++        check("same_label", len(labels) <= 1, f"baseline labels: {sorted(str(item) for item in labels)}"),
++        check(
++            "same_model_when_known",
++            len(model_names) <= 1,
++            f"baseline model names: {sorted(str(item) for item in model_names)}",
++        ),
++        check(
++            "baseline_prefix_cache_known",
++            all(status not in {None, "unknown"} for status in prefix_statuses),
++            f"baseline prefix statuses: {sorted(str(item) for item in prefix_statuses)}",
++        ),
++    ]
++
++
++def check(name: str, passed: bool, detail: str) -> dict[str, str]:
++    return {"name": name, "status": "pass" if passed else "warn", "detail": detail}
++
++
++def format_prefix_cache_plan_table(plan: dict[str, Any]) -> str:
++    rows = [
++        ("status", plan.get("status")),
++        ("baseline_run_count", plan.get("baseline_run_count")),
++        ("variant_config", nested(plan, "variant_config.path")),
++        ("variant_prefix_cache_hint", nested(plan, "variant_config.prefix_cache_hint")),
++        ("mutates_service", plan.get("mutates_service")),
++    ]
++    rows.extend((f"check.{item['name']}", item["status"]) for item in plan.get("checks", []))
++    width = max(len(str(key)) for key, _value in rows)
++    return "\n".join(f"{str(key).ljust(width)}  {value}" for key, value in rows)
++
++
++def plan_to_json(plan: dict[str, Any]) -> str:
++    return json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True)
++
++
++def nested(data: dict[str, Any], dotted_key: str) -> Any:
++    value: Any = data
++    for part in dotted_key.split("."):
++        if not isinstance(value, dict):
++            return None
++        value = value.get(part)
++    return value
+diff --git a/src/agentmon/reporting/report.py b/src/agentmon/reporting/report.py
+index fba9ca8..2e62de8 100644
+--- a/src/agentmon/reporting/report.py
++++ b/src/agentmon/reporting/report.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+ 
+ import csv
+ import json
++import math
+ import sqlite3
+ from pathlib import Path
+ from typing import Any
+@@ -65,6 +66,7 @@ def build_report(run_dir: str | Path) -> dict[str, Any]:
+         "host": summarize_host_events(events),
+         "proc": summarize_proc_events(events),
+         "vllm": summarize_vllm_events(events),
++        "vllm_p2": summarize_vllm_p2_events(events),
+         "kv_cache": summarize_kv_cache(manifest, events),
+         "ascend": summarize_ascend_events(events),
+         "errors": summarize_errors(events),
+@@ -118,7 +120,9 @@ def sqlite_event_count(path: Path) -> int | None:
+ def summarize_event_log(event_log: dict[str, Any], sqlite_count: int | None) -> dict[str, Any]:
+     events = event_log["events"]
+     jsonl_p1_count = sum(1 for event in events if is_p1_event(event))
+-    jsonl_p0_count = len(events) - jsonl_p1_count
++    jsonl_p2_count = sum(1 for event in events if is_p2_event(event))
++    jsonl_adapter_count = jsonl_p1_count + jsonl_p2_count
++    jsonl_p0_count = len(events) - jsonl_adapter_count
+     duplicate_event_ids = duplicate_event_id_count(events)
+     p0_difference = None if sqlite_count is None else jsonl_p0_count - sqlite_count
+     return {
+@@ -127,6 +131,8 @@ def summarize_event_log(event_log: dict[str, Any], sqlite_count: int | None) ->
+         "jsonl_total_count": event_log["valid_lines"],
+         "jsonl_p0_count": jsonl_p0_count,
+         "jsonl_p1_count": jsonl_p1_count,
++        "jsonl_p2_count": jsonl_p2_count,
++        "jsonl_adapter_count": jsonl_adapter_count,
+         "jsonl_invalid_count": event_log["invalid_lines"],
+         "jsonl_valid_events": event_log["valid_lines"],
+         "jsonl_invalid_lines": event_log["invalid_lines"],
+@@ -193,6 +199,10 @@ def is_p1_event(event: dict[str, Any]) -> bool:
+     return event_type in P1_EVENT_TYPES or (isinstance(payload, dict) and payload.get("span_type") in SPAN_TYPES)
+ 
+ 
++def is_p2_event(event: dict[str, Any]) -> bool:
++    return event.get("source") == "vllm_p2"
++
++
+ def ns_to_s(value: Any) -> float | None:
+     if value is None:
+         return None
+@@ -481,6 +491,363 @@ def summarize_vllm_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+     }
+ 
+ 
++def summarize_vllm_p2_events(events: list[dict[str, Any]]) -> dict[str, Any]:
++    p2_events = [event for event in events if is_p2_event(event)]
++    if not p2_events:
++        return {"status": "missing"}
++    request_rows: dict[str, dict[str, Any]] = {}
++    adapter_errors = 0
++    capabilities: list[dict[str, Any]] = []
++    kv_snapshots: list[dict[str, Any]] = []
++    kv_block_events: list[dict[str, Any]] = []
++    npu_attributions: list[dict[str, Any]] = []
++    for event in p2_events:
++        event_type = str(event.get("event_type", ""))
++        payload = event.get("payload", {})
++        if not isinstance(payload, dict):
++            payload = {}
++        if event_type == "vllm.adapter.error":
++            adapter_errors += 1
++            continue
++        if event_type == "vllm.adapter.capability":
++            capabilities.append(payload)
++            continue
++        if event_type == "vllm.kv.snapshot":
++            kv_snapshots.append(payload)
++            continue
++        if event_type == "vllm.kv.block_event":
++            kv_block_events.append(payload)
++            key = request_key(payload)
++            row = request_rows.setdefault(
++                key,
++                {
++                    "agent_request_id": payload.get("agent_request_id"),
++                    "vllm_request_id": payload.get("vllm_request_id") or payload.get("request_id"),
++                    "correlation_quality": payload.get("correlation_quality") or "unavailable",
++                },
++            )
++            merge_request_payload(row, payload)
++            continue
++        if event_type == "vllm.request.npu_attribution":
++            npu_attributions.append(payload)
++            continue
++        if not event_type.startswith("vllm.request."):
++            continue
++        key = request_key(payload)
++        row = request_rows.setdefault(
++            key,
++            {
++                "agent_request_id": payload.get("agent_request_id"),
++                "vllm_request_id": payload.get("vllm_request_id") or payload.get("request_id"),
++                "correlation_quality": payload.get("correlation_quality") or "unavailable",
++            },
++        )
++        merge_request_payload(row, payload)
++        row["last_event_type"] = event_type
++    correlation_counts = count_request_correlations(request_rows.values())
++    request_values = list(request_rows.values())
++    return {
++        "status": "partial" if adapter_errors else "complete",
++        "event_count": len(p2_events),
++        "request_count": len(request_rows),
++        "adapter_error_count": adapter_errors,
++        "capability_count": len(capabilities),
++        "correlation": correlation_counts,
++        "latency": summarize_p2_request_latencies(request_values),
++        "tokens": summarize_p2_request_tokens(request_values),
++        "kv_cache": summarize_p2_kv_cache(request_values, kv_snapshots, kv_block_events),
++        "npu_attribution": summarize_p2_npu_attribution(npu_attributions),
++        "requests": request_values[:100],
++    }
++
++
++def request_key(payload: dict[str, Any]) -> str:
++    for key in ("vllm_request_id", "request_id", "agent_request_id"):
++        value = payload.get(key)
++        if value not in {None, ""}:
++            return f"{key}:{value}"
++    return f"unmapped:{payload.get('sequence') or len(str(payload))}"
++
++
++def merge_request_payload(row: dict[str, Any], payload: dict[str, Any]) -> None:
++    for key in (
++        "agent_request_id",
++        "vllm_request_id",
++        "request_id",
++        "run_id",
++        "model_name",
++        "correlation_quality",
++        "received_ns",
++        "first_scheduled_ns",
++        "prefill_completed_ns",
++        "first_token_ns",
++        "finished_ns",
++        "finish_reason",
++        "prompt_tokens",
++        "cached_prompt_tokens",
++        "computed_prefill_tokens",
++        "recomputed_prompt_tokens",
++        "generation_tokens",
++        "preemption_count",
++        "allocated_block_count",
++        "freed_block_count",
++        "evicted_block_count",
++        "kv_usage_before",
++        "kv_usage_after",
++        "kv_quality",
++    ):
++        value = payload.get(key)
++        if value is not None:
++            target_key = "vllm_request_id" if key == "request_id" else key
++            row[target_key] = value
++
++
++def count_request_correlations(rows: Any) -> dict[str, int]:
++    counts = {"direct": 0, "server_generated": 0, "heuristic": 0, "unavailable": 0}
++    for row in rows:
++        quality = row.get("correlation_quality")
++        if quality not in counts:
++            quality = "unavailable"
++        counts[str(quality)] += 1
++    return counts
++
++
++def summarize_p2_request_latencies(rows: list[dict[str, Any]]) -> dict[str, Any]:
++    return {
++        "queue": p2_latency_stats(
++            [ns_delta_s(row.get("received_ns"), row.get("first_scheduled_ns")) for row in rows]
++        ),
++        "prefill": p2_latency_stats(
++            [ns_delta_s(row.get("first_scheduled_ns"), row.get("prefill_completed_ns")) for row in rows]
++        ),
++        "decode": p2_latency_stats(
++            [ns_delta_s(row.get("first_token_ns"), row.get("finished_ns")) for row in rows]
++        ),
++        "ttft": p2_latency_stats(
++            [ns_delta_s(row.get("received_ns"), row.get("first_token_ns")) for row in rows]
++        ),
++        "e2e": p2_latency_stats(
++            [ns_delta_s(row.get("received_ns"), row.get("finished_ns")) for row in rows]
++        ),
++    }
++
++
++def summarize_p2_request_tokens(rows: list[dict[str, Any]]) -> dict[str, Any]:
++    return {
++        "prompt_tokens": p2_total_stats([numeric_or_none(row.get("prompt_tokens")) for row in rows], len(rows)),
++        "cached_prompt_tokens": p2_total_stats(
++            [numeric_or_none(row.get("cached_prompt_tokens")) for row in rows],
++            len(rows),
++        ),
++        "computed_prefill_tokens": p2_total_stats(
++            [numeric_or_none(row.get("computed_prefill_tokens")) for row in rows],
++            len(rows),
++        ),
++        "recomputed_prompt_tokens": p2_total_stats(
++            [numeric_or_none(row.get("recomputed_prompt_tokens")) for row in rows],
++            len(rows),
++        ),
++        "generation_tokens": p2_total_stats(
++            [numeric_or_none(row.get("generation_tokens")) for row in rows],
++            len(rows),
++        ),
++        "preemption_count": p2_total_stats(
++            [numeric_or_none(row.get("preemption_count")) for row in rows],
++            len(rows),
++        ),
++    }
++
++
++def summarize_p2_kv_cache(
++    rows: list[dict[str, Any]],
++    snapshots: list[dict[str, Any]],
++    block_events: list[dict[str, Any]],
++) -> dict[str, Any]:
++    latest = snapshots[-1] if snapshots else {}
++    prefix_status = latest.get("prefix_cache_status") or "unknown"
++    queries = numeric_or_none(latest.get("prefix_cache_queries"))
++    hits = numeric_or_none(latest.get("prefix_cache_hits"))
++    if prefix_status == "disabled":
++        prefix_hit_rate = None
++        prefix_quality = "disabled"
++    elif queries is not None and queries > 0 and hits is not None:
++        prefix_hit_rate = hits / queries
++        prefix_quality = "exact"
++    else:
++        prefix_hit_rate = None
++        prefix_quality = "unavailable"
++
++    prompt_total = sum_values(rows, "prompt_tokens")
++    cached_total = sum_values(rows, "cached_prompt_tokens")
++    recomputed_total = sum_values(rows, "recomputed_prompt_tokens")
++    return {
++        "prefix_cache_status": prefix_status,
++        "prefix_cache_hit_rate": prefix_hit_rate,
++        "prefix_cache_hit_rate_quality": prefix_quality,
++        "cached_prompt_ratio": ratio_or_none(cached_total, prompt_total),
++        "recomputed_prompt_ratio": ratio_or_none(recomputed_total, prompt_total),
++        "state_counts": count_p2_kv_states(rows, block_events, prefix_status),
++        "block_events": {
++            "event_count": len(block_events),
++            "allocated_block_count": p2_total_stats(
++                [numeric_or_none(event.get("allocated_block_count")) for event in block_events],
++                len(block_events),
++            ),
++            "freed_block_count": p2_total_stats(
++                [numeric_or_none(event.get("freed_block_count")) for event in block_events],
++                len(block_events),
++            ),
++            "evicted_block_count": p2_total_stats(
++                [numeric_or_none(event.get("evicted_block_count")) for event in block_events],
++                len(block_events),
++            ),
++        },
++        "kv_usage_ratio": {
++            "before": p2_latency_stats([numeric_or_none(event.get("kv_usage_before")) for event in block_events]),
++            "after": p2_latency_stats([numeric_or_none(event.get("kv_usage_after")) for event in block_events]),
++            "snapshot": numeric_or_none(latest.get("kv_usage_ratio")),
++        },
++        "kv_pool": latest.get("kv_pool") if isinstance(latest.get("kv_pool"), dict) else None,
++        "snapshot_count": len(snapshots),
++    }
++
++
++def count_p2_kv_states(
++    rows: list[dict[str, Any]],
++    block_events: list[dict[str, Any]],
++    prefix_status: Any,
++) -> dict[str, int]:
++    counts = {
++        "disabled": 0,
++        "enabled_zero_hit": 0,
++        "hit": 0,
++        "recomputed": 0,
++        "evicted": 0,
++        "preempted": 0,
++        "unknown": 0,
++    }
++    for row in rows:
++        cached = numeric_or_none(row.get("cached_prompt_tokens"))
++        prompt = numeric_or_none(row.get("prompt_tokens"))
++        recomputed = numeric_or_none(row.get("recomputed_prompt_tokens"))
++        preemptions = numeric_or_none(row.get("preemption_count"))
++        if prefix_status == "disabled":
++            counts["disabled"] += 1
++        elif cached is not None and cached > 0:
++            counts["hit"] += 1
++        elif cached == 0 and prompt is not None:
++            counts["enabled_zero_hit"] += 1
++        else:
++            counts["unknown"] += 1
++        if recomputed is not None and recomputed > 0:
++            counts["recomputed"] += 1
++        if preemptions is not None and preemptions > 0:
++            counts["preempted"] += 1
++    evicted_requests: set[str] = set()
++    for event in block_events:
++        evicted = numeric_or_none(event.get("evicted_block_count"))
++        if evicted is not None and evicted > 0:
++            evicted_requests.add(request_key(event))
++    counts["evicted"] = len(evicted_requests)
++    return counts
++
++
++def summarize_p2_npu_attribution(events: list[dict[str, Any]]) -> dict[str, Any]:
++    return {
++        "event_count": len(events),
++        "request_count": len({request_key(event) for event in events}) if events else 0,
++        "quality_counts": count_values_from_payloads(events, "attribution_quality", missing="unavailable"),
++        "npu_utilization_integral": p2_total_stats(
++            [numeric_or_none(event.get("npu_utilization_integral")) for event in events],
++            len(events),
++        ),
++        "npu_power_integral": p2_total_stats(
++            [numeric_or_none(event.get("npu_power_integral")) for event in events],
++            len(events),
++        ),
++        "sample_count": p2_total_stats(
++            [numeric_or_none(event.get("sample_count")) for event in events],
++            len(events),
++        ),
++    }
++
++
++def p2_latency_stats(values: list[float | None]) -> dict[str, Any]:
++    clean = sorted(value for value in values if value is not None and math.isfinite(float(value)))
++    return {
++        "total": sum(clean) if clean else None,
++        "mean": (sum(clean) / len(clean)) if clean else None,
++        "p50": percentile(clean, 50),
++        "p95": percentile(clean, 95),
++        "max": max(clean) if clean else None,
++        "sample_count": len(clean),
++    }
++
++
++def p2_total_stats(values: list[float | int | None], denominator: int) -> dict[str, Any]:
++    clean = [value for value in values if value is not None and math.isfinite(float(value))]
++    total = sum(clean) if clean else None
++    return {
++        "total": total,
++        "mean": (total / len(clean)) if clean else None,
++        "sample_count": len(clean),
++        "coverage": (len(clean) / denominator) if denominator else None,
++    }
++
++
++def percentile(values: list[float], pct: float) -> float | None:
++    if not values:
++        return None
++    if len(values) == 1:
++        return float(values[0])
++    rank = (float(pct) / 100.0) * (len(values) - 1)
++    lower = math.floor(rank)
++    upper = math.ceil(rank)
++    if lower == upper:
++        return float(values[int(rank)])
++    lower_value = values[lower]
++    upper_value = values[upper]
++    return float(lower_value + (upper_value - lower_value) * (rank - lower))
++
++
++def ns_delta_s(start: Any, end: Any) -> float | None:
++    if not isinstance(start, int) or not isinstance(end, int):
++        return None
++    delta = end - start
++    if delta < 0:
++        return None
++    return delta / 1_000_000_000
++
++
++def numeric_or_none(value: Any) -> float | int | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, (int, float)) and math.isfinite(float(value)):
++        return value
++    return None
++
++
++def ratio_or_none(numerator: float | int | None, denominator: float | int | None) -> float | None:
++    if numerator is None or denominator in {None, 0}:
++        return None
++    return float(numerator) / float(denominator)
++
++
++def sum_values(rows: list[dict[str, Any]], key: str) -> float | int | None:
++    values = [numeric_or_none(row.get(key)) for row in rows]
++    clean = [value for value in values if value is not None]
++    return sum(clean) if clean else None
++
++
++def count_values_from_payloads(rows: list[dict[str, Any]], key: str, *, missing: str) -> dict[str, int]:
++    counts: dict[str, int] = {}
++    for row in rows:
++        value = row.get(key)
++        label = str(value) if value not in {None, ""} else missing
++        counts[label] = counts.get(label, 0) + 1
++    return counts
++
++
+ def summarize_kv_cache(manifest: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+     prefix_status = manifest.get("prefix_caching_status") or "unknown"
+     kv_metric_values: list[float] = []
+@@ -590,6 +957,9 @@ def format_text_report(report: dict[str, Any]) -> str:
+         "vLLM",
+         safe_json_dumps(report.get("vllm", {})),
+         "",
++        "vLLM P2",
++        safe_json_dumps(report.get("vllm_p2", {})),
++        "",
+         "KV Cache",
+         safe_json_dumps(report.get("kv_cache", {})),
+         "",
+diff --git a/src/agentmon/reporting/summary.py b/src/agentmon/reporting/summary.py
+index 608e30a..b8fb2c0 100644
+--- a/src/agentmon/reporting/summary.py
++++ b/src/agentmon/reporting/summary.py
+@@ -64,6 +64,42 @@ SUMMARY_FIELDS = [
+     "prefix_cache_hit_rate_quality",
+     "vllm_request_count",
+     "preemption_count",
++    "p2_status",
++    "p2_request_count",
++    "p2_direct_correlation_count",
++    "p2_server_generated_correlation_count",
++    "p2_heuristic_correlation_count",
++    "p2_unavailable_correlation_count",
++    "p2_adapter_error_count",
++    "p2_queue_latency.mean",
++    "p2_queue_latency.p50",
++    "p2_queue_latency.p95",
++    "p2_prefill_latency.mean",
++    "p2_prefill_latency.p50",
++    "p2_prefill_latency.p95",
++    "p2_decode_latency.mean",
++    "p2_decode_latency.p50",
++    "p2_decode_latency.p95",
++    "p2_ttft_latency.mean",
++    "p2_ttft_latency.p50",
++    "p2_ttft_latency.p95",
++    "p2_e2e_latency.mean",
++    "p2_e2e_latency.p50",
++    "p2_e2e_latency.p95",
++    "p2_prompt_tokens",
++    "p2_cached_prompt_tokens",
++    "p2_computed_prefill_tokens",
++    "p2_recomputed_prompt_tokens",
++    "p2_generation_tokens",
++    "p2_preemption_count",
++    "p2_kv_prefix_cache_status",
++    "p2_kv_prefix_cache_hit_rate",
++    "p2_kv_cached_prompt_ratio",
++    "p2_kv_recomputed_prompt_ratio",
++    "p2_kv_state_counts",
++    "p2_kv_pool_bytes_per_rank",
++    "p2_kv_pool_quality",
++    "p2_npu_attribution_quality_counts",
+     "npu_peak_hbm_bytes",
+     "npu_max_aicore_util_pct",
+     "npu_parser_confidence",
+@@ -113,6 +149,36 @@ AGGREGATE_FIELDS = [
+     "kv_cache_usage_ratio_max.p95",
+     "kv_cache_usage_ratio_max.max",
+     "prefix_cache_hit_rate.mean",
++    "p2_request_count.total",
++    "p2_request_count.mean",
++    "p2_direct_correlation_count.total",
++    "p2_heuristic_correlation_count.total",
++    "p2_unavailable_correlation_count.total",
++    "p2_adapter_error_count.total",
++    "p2_queue_latency.p50",
++    "p2_queue_latency.p90",
++    "p2_queue_latency.p95",
++    "p2_prefill_latency.p50",
++    "p2_prefill_latency.p90",
++    "p2_prefill_latency.p95",
++    "p2_decode_latency.p50",
++    "p2_decode_latency.p90",
++    "p2_decode_latency.p95",
++    "p2_ttft_latency.p50",
++    "p2_ttft_latency.p90",
++    "p2_ttft_latency.p95",
++    "p2_e2e_latency.p50",
++    "p2_e2e_latency.p90",
++    "p2_e2e_latency.p95",
++    "p2_prompt_tokens.total",
++    "p2_cached_prompt_tokens.total",
++    "p2_computed_prefill_tokens.total",
++    "p2_recomputed_prompt_tokens.total",
++    "p2_generation_tokens.total",
++    "p2_preemption_count.total",
++    "p2_kv_pool_bytes_per_rank.p50",
++    "p2_kv_pool_bytes_per_rank.p95",
++    "p2_kv_pool_bytes_per_rank.max",
+ ]
+ 
+ 
+@@ -125,6 +191,7 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+     proc = as_dict(report.get("proc"))
+     kv_cache = as_dict(report.get("kv_cache"))
+     vllm = as_dict(report.get("vllm"))
++    vllm_p2 = as_dict(report.get("vllm_p2"))
+     ascend = as_dict(report.get("ascend"))
+ 
+     model_durations = span_durations(report, "model_request")
+@@ -137,6 +204,13 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+     prefix_status = none_if_unavailable(kv_cache.get("prefix_cache_status"))
+     prefix_hit_rate = numeric_or_none(kv_cache.get("prefix_cache_hit_rate"))
+     prefix_hit_quality = none_if_unavailable(kv_cache.get("prefix_cache_hit_rate_quality"))
++    p2_status = vllm_p2.get("status") or "missing"
++    p2_correlation = as_dict(vllm_p2.get("correlation"))
++    p2_latency = as_dict(vllm_p2.get("latency"))
++    p2_tokens = as_dict(vllm_p2.get("tokens"))
++    p2_kv = as_dict(vllm_p2.get("kv_cache"))
++    p2_kv_pool = as_dict(p2_kv.get("kv_pool"))
++    p2_npu = as_dict(vllm_p2.get("npu_attribution"))
+     run_status = report.get("status") or manifest.get("status")
+     exit_code = report.get("exit_code") if report.get("exit_code") is not None else manifest.get("exit_code")
+     agent_exit_status = agent.get("exit_status")
+@@ -187,6 +261,32 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "prefix_cache_hit_rate_quality": "disabled" if prefix_status == "disabled" else prefix_hit_quality,
+         "vllm_request_count": find_counter_delta(vllm, ["request_success_total", "requests_total"], ["request"]),
+         "preemption_count": find_counter_delta(vllm, ["preemption_total", "preemptions_total"], ["preemption"]),
++        "p2_status": p2_status,
++        "p2_request_count": p2_metric(vllm_p2, "request_count", p2_status),
++        "p2_direct_correlation_count": p2_metric(p2_correlation, "direct", p2_status),
++        "p2_server_generated_correlation_count": p2_metric(p2_correlation, "server_generated", p2_status),
++        "p2_heuristic_correlation_count": p2_metric(p2_correlation, "heuristic", p2_status),
++        "p2_unavailable_correlation_count": p2_metric(p2_correlation, "unavailable", p2_status),
++        "p2_adapter_error_count": p2_metric(vllm_p2, "adapter_error_count", p2_status),
++        "p2_queue_latency": p2_latency_stats(p2_latency, "queue", p2_status),
++        "p2_prefill_latency": p2_latency_stats(p2_latency, "prefill", p2_status),
++        "p2_decode_latency": p2_latency_stats(p2_latency, "decode", p2_status),
++        "p2_ttft_latency": p2_latency_stats(p2_latency, "ttft", p2_status),
++        "p2_e2e_latency": p2_latency_stats(p2_latency, "e2e", p2_status),
++        "p2_prompt_tokens": p2_token_total(p2_tokens, "prompt_tokens", p2_status),
++        "p2_cached_prompt_tokens": p2_token_total(p2_tokens, "cached_prompt_tokens", p2_status),
++        "p2_computed_prefill_tokens": p2_token_total(p2_tokens, "computed_prefill_tokens", p2_status),
++        "p2_recomputed_prompt_tokens": p2_token_total(p2_tokens, "recomputed_prompt_tokens", p2_status),
++        "p2_generation_tokens": p2_token_total(p2_tokens, "generation_tokens", p2_status),
++        "p2_preemption_count": p2_token_total(p2_tokens, "preemption_count", p2_status),
++        "p2_kv_prefix_cache_status": None if p2_status == "missing" else p2_kv.get("prefix_cache_status"),
++        "p2_kv_prefix_cache_hit_rate": p2_metric(p2_kv, "prefix_cache_hit_rate", p2_status),
++        "p2_kv_cached_prompt_ratio": p2_metric(p2_kv, "cached_prompt_ratio", p2_status),
++        "p2_kv_recomputed_prompt_ratio": p2_metric(p2_kv, "recomputed_prompt_ratio", p2_status),
++        "p2_kv_state_counts": as_dict(p2_kv.get("state_counts")) if p2_status != "missing" else {},
++        "p2_kv_pool_bytes_per_rank": p2_metric(p2_kv_pool, "allocated_pool_bytes_per_rank", p2_status),
++        "p2_kv_pool_quality": None if p2_status == "missing" else p2_kv_pool.get("source_quality"),
++        "p2_npu_attribution_quality_counts": as_dict(p2_npu.get("quality_counts")) if p2_status != "missing" else {},
+         "npu_peak_hbm_bytes": npu_peak_hbm,
+         "npu_max_aicore_util_pct": npu_max_aicore,
+         "npu_parser_confidence": numeric_or_none(ascend.get("parser_confidence")),
+@@ -251,6 +351,55 @@ def build_aggregate(
+             [50, 95],
+             denominator=run_count,
+         ),
++        "p2_status_counts": count_values(summaries, "p2_status", missing="missing"),
++        "p2_request_count": total_mean(values(summaries, "p2_request_count"), run_count),
++        "p2_direct_correlation_count": total_mean(values(summaries, "p2_direct_correlation_count"), run_count),
++        "p2_heuristic_correlation_count": total_mean(values(summaries, "p2_heuristic_correlation_count"), run_count),
++        "p2_unavailable_correlation_count": total_mean(
++            values(summaries, "p2_unavailable_correlation_count"),
++            run_count,
++        ),
++        "p2_adapter_error_count": total_mean(values(summaries, "p2_adapter_error_count"), run_count),
++        "p2_queue_latency": percentile_stats(values(summaries, "p2_queue_latency.mean"), [50, 90, 95], denominator=run_count),
++        "p2_prefill_latency": percentile_stats(
++            values(summaries, "p2_prefill_latency.mean"),
++            [50, 90, 95],
++            denominator=run_count,
++        ),
++        "p2_decode_latency": percentile_stats(
++            values(summaries, "p2_decode_latency.mean"),
++            [50, 90, 95],
++            denominator=run_count,
++        ),
++        "p2_ttft_latency": percentile_stats(
++            values(summaries, "p2_ttft_latency.mean"),
++            [50, 90, 95],
++            denominator=run_count,
++        ),
++        "p2_e2e_latency": percentile_stats(
++            values(summaries, "p2_e2e_latency.mean"),
++            [50, 90, 95],
++            denominator=run_count,
++        ),
++        "p2_prompt_tokens": total_mean(values(summaries, "p2_prompt_tokens"), run_count),
++        "p2_cached_prompt_tokens": total_mean(values(summaries, "p2_cached_prompt_tokens"), run_count),
++        "p2_computed_prefill_tokens": total_mean(values(summaries, "p2_computed_prefill_tokens"), run_count),
++        "p2_recomputed_prompt_tokens": total_mean(values(summaries, "p2_recomputed_prompt_tokens"), run_count),
++        "p2_generation_tokens": total_mean(values(summaries, "p2_generation_tokens"), run_count),
++        "p2_preemption_count": total_mean(values(summaries, "p2_preemption_count"), run_count),
++        "p2_kv_prefix_cache_status_counts": count_values(
++            summaries,
++            "p2_kv_prefix_cache_status",
++            missing="missing",
++        ),
++        "p2_kv_state_counts": sum_count_maps(summaries, "p2_kv_state_counts"),
++        "p2_kv_pool_quality_counts": count_values(summaries, "p2_kv_pool_quality", missing="missing"),
++        "p2_kv_pool_bytes_per_rank": percentile_stats(
++            values(summaries, "p2_kv_pool_bytes_per_rank"),
++            [50, 95],
++            denominator=run_count,
++        ),
++        "p2_npu_attribution_quality_counts": sum_count_maps(summaries, "p2_npu_attribution_quality_counts"),
+         "data_quality_failures": count_data_quality_failures(summaries),
+         "span_issue_run_counts": {
+             "open_spans": count_runs_with_positive(summaries, "open_spans"),
+@@ -419,6 +568,35 @@ def total_mean(values_: list[float], run_count: int) -> dict[str, Any]:
+     }
+ 
+ 
++def p2_metric(data: dict[str, Any], key: str, status: Any) -> float | int | None:
++    if status in {None, "missing"}:
++        return None
++    return numeric_or_none(data.get(key))
++
++
++def p2_latency_stats(latency: dict[str, Any], key: str, status: Any) -> dict[str, Any]:
++    empty = latency_stats([])
++    if status in {None, "missing"}:
++        return empty
++    section = as_dict(latency.get(key))
++    if not section:
++        return empty
++    return {
++        "total": numeric_or_none(section.get("total")),
++        "mean": numeric_or_none(section.get("mean")),
++        "p50": numeric_or_none(section.get("p50")),
++        "p95": numeric_or_none(section.get("p95")),
++        "max": numeric_or_none(section.get("max")),
++        "sample_count": numeric_or_none(section.get("sample_count")) or 0,
++    }
++
++
++def p2_token_total(tokens: dict[str, Any], key: str, status: Any) -> float | int | None:
++    if status in {None, "missing"}:
++        return None
++    return numeric_or_none(as_dict(tokens.get(key)).get("total"))
++
++
+ def prefix_cache_hit_rate_aggregate(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+     values_: list[float] = []
+     enabled_count = 0
+@@ -549,6 +727,17 @@ def count_values(summaries: list[dict[str, Any]], key: str, *, missing: str) ->
+     return counts
+ 
+ 
++def sum_count_maps(summaries: list[dict[str, Any]], key: str) -> dict[str, int]:
++    counts: dict[str, int] = {}
++    for summary in summaries:
++        for label, value in as_dict(summary.get(key)).items():
++            numeric = numeric_or_none(value)
++            if numeric is None:
++                continue
++            counts[str(label)] = counts.get(str(label), 0) + int(numeric)
++    return counts
++
++
+ def find_counter_delta(vllm: dict[str, Any], exact_needles: list[str], contains_needles: list[str]) -> float | None:
+     deltas = as_dict(vllm.get("counter_deltas"))
+     if not deltas:
+diff --git a/src/sitecustomize.py b/src/sitecustomize.py
+new file mode 100644
+index 0000000..d0e398b
+--- /dev/null
++++ b/src/sitecustomize.py
+@@ -0,0 +1,17 @@
++from __future__ import annotations
++
++import os
++import sys
++
++
++def _truthy(value: object) -> bool:
++    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
++
++
++if _truthy(os.environ.get("AGENTMON_VLLM_P2_ENABLE")):
++    try:
++        from agentmon.adapters.vllm_018.hook import install_from_env
++
++        install_from_env()
++    except Exception as exc:
++        print(f"agentmon vllm p2 hook bootstrap failed: {exc}", file=sys.stderr)
+diff --git a/tests/unit/test_jsonl.py b/tests/unit/test_jsonl.py
+index 38da719..eede8c1 100644
+--- a/tests/unit/test_jsonl.py
++++ b/tests/unit/test_jsonl.py
+@@ -89,7 +89,13 @@ class JsonlWriterTests(unittest.TestCase):
+                 process.join(timeout=10)
+                 self.assertEqual(process.exitcode, 0)
+             lines = path.read_text(encoding="utf-8").splitlines()
++            file_mode = path.stat().st_mode & 0o777
+ 
+         self.assertEqual(len(lines), process_count * events_per_process)
++        self.assertEqual(file_mode, 0o600)
++        event_ids = set()
+         for line in lines:
+-            self.assertEqual(json.loads(line)["run_id"], "run-mp")
++            data = json.loads(line)
++            self.assertEqual(data["run_id"], "run-mp")
++            event_ids.add(data["event_id"])
++        self.assertEqual(len(event_ids), len(lines))
+diff --git a/tests/unit/test_p2_discovery.py b/tests/unit/test_p2_discovery.py
+new file mode 100644
+index 0000000..e4e6de6
+--- /dev/null
++++ b/tests/unit/test_p2_discovery.py
+@@ -0,0 +1,146 @@
++import importlib.util
++import io
++import json
++import sys
++import tempfile
++import unittest
++from contextlib import redirect_stdout
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[2]
++DISCOVERY_SCRIPT = ROOT / "scripts" / "agentmon_p2_discovery.py"
++
++
++def load_discovery_module():
++    spec = importlib.util.spec_from_file_location("agentmon_p2_discovery", DISCOVERY_SCRIPT)
++    module = importlib.util.module_from_spec(spec)
++    assert spec.loader is not None
++    spec.loader.exec_module(module)
++    return module
++
++
++class P2DiscoveryTests(unittest.TestCase):
++    def test_vllm_version_status_accepts_local_suffix_only_for_target_version(self) -> None:
++        module = load_discovery_module()
++
++        self.assertEqual(module.vllm_version_status("0.18.0"), "compatible")
++        self.assertEqual(module.vllm_version_status("0.18.0+empty"), "compatible")
++        self.assertEqual(module.vllm_version_status("0.19.0"), "mismatch")
++        self.assertEqual(module.vllm_version_status(None), "missing")
++
++    def test_collect_snapshot_records_module_object_signature_and_source(self) -> None:
++        module = load_discovery_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            write_fake_vllm(Path(tmp))
++            sys.path.insert(0, tmp)
++            try:
++                snapshot = module.collect_snapshot(
++                    package_names=["vllm"],
++                    module_names=["vllm.config", "vllm.core.scheduler", "vllm.legacy.missing"],
++                    object_refs=[
++                        "vllm.config:CacheConfig",
++                        "vllm.core.scheduler:Scheduler",
++                        "vllm.config:MissingObject",
++                    ],
++                    scan_package_names=["vllm"],
++                    scan_limit=50,
++                    source_lines=20,
++                )
++            finally:
++                sys.path.remove(tmp)
++                clear_fake_vllm_modules()
++
++        self.assertEqual(snapshot["snapshot_type"], "agentmon.p2_discovery")
++        self.assertEqual(snapshot["readiness"]["vllm_version_status"], "compatible")
++        self.assertEqual(snapshot["packages"]["vllm"]["version"], "0.18.0+empty")
++        self.assertEqual(snapshot["modules"]["vllm.config"]["status"], "ok")
++        cache = snapshot["objects"]["vllm.config:CacheConfig"]
++        self.assertEqual(cache["status"], "ok")
++        self.assertIn("block_size", cache["init_signature"])
++        self.assertIn("source", cache)
++        scheduler = snapshot["objects"]["vllm.core.scheduler:Scheduler"]
++        self.assertEqual(scheduler["status"], "ok")
++        self.assertTrue(any(row["name"] == "schedule" for row in scheduler["methods"]))
++        scanned_names = {
++            row["name"]
++            for row in snapshot["package_scans"]["vllm"]["candidate_modules"]
++        }
++        self.assertIn("vllm.core.scheduler", scanned_names)
++        hook_inputs = snapshot["hook_resolution_inputs"]
++        self.assertIn("Use successful_modules", hook_inputs["policy"])
++        self.assertTrue(any(row["name"] == "vllm.config" for row in hook_inputs["successful_modules"]))
++        self.assertTrue(any(row["ref"] == "vllm.config:CacheConfig" for row in hook_inputs["successful_objects"]))
++        self.assertFalse(any(row["name"] == "vllm.legacy.missing" for row in hook_inputs["successful_modules"]))
++        self.assertTrue(any(row["name"] == "vllm.legacy.missing" for row in hook_inputs["ignored_failed_modules"]))
++        self.assertTrue(any(row["ref"] == "vllm.config:MissingObject" for row in hook_inputs["ignored_failed_objects"]))
++
++    def test_cli_writes_json_and_strict_version_fails_on_mismatch(self) -> None:
++        module = load_discovery_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            write_fake_vllm(root, version="0.19.0")
++            sys.path.insert(0, tmp)
++            try:
++                output_path = root / "snapshot.json"
++                stdout = io.StringIO()
++                with redirect_stdout(stdout):
++                    exit_code = module.main(
++                        [
++                            "--output",
++                            str(output_path),
++                            "--strict-version",
++                            "--package",
++                            "vllm",
++                            "--module",
++                            "vllm.config",
++                            "--no-default-scan",
++                            "--object",
++                            "vllm.config:CacheConfig",
++                        ]
++                    )
++            finally:
++                sys.path.remove(tmp)
++                clear_fake_vllm_modules()
++
++            payload = json.loads(output_path.read_text(encoding="utf-8"))
++
++        self.assertEqual(exit_code, 1)
++        self.assertEqual(stdout.getvalue(), "")
++        self.assertEqual(payload["readiness"]["vllm_version_status"], "mismatch")
++
++
++def write_fake_vllm(root: Path, *, version: str = "0.18.0+empty") -> None:
++    (root / "vllm" / "core").mkdir(parents=True)
++    (root / "vllm" / "__init__.py").write_text(f"__version__ = {version!r}\n", encoding="utf-8")
++    (root / "vllm" / "config.py").write_text(
++        """
++class CacheConfig:
++    def __init__(self, block_size=16, cache_dtype="bfloat16"):
++        self.block_size = block_size
++        self.cache_dtype = cache_dtype
++
++
++class EngineArgs:
++    pass
++""".lstrip(),
++        encoding="utf-8",
++    )
++    (root / "vllm" / "core" / "__init__.py").write_text("", encoding="utf-8")
++    (root / "vllm" / "core" / "scheduler.py").write_text(
++        """
++class Scheduler:
++    def __init__(self, cache_config=None):
++        self.cache_config = cache_config
++
++    def schedule(self, request_id=None):
++        return request_id
++""".lstrip(),
++        encoding="utf-8",
++    )
++
++
++def clear_fake_vllm_modules() -> None:
++    for name in list(sys.modules):
++        if name == "vllm" or name.startswith("vllm."):
++            sys.modules.pop(name, None)
+diff --git a/tests/unit/test_p2_vllm_adapter.py b/tests/unit/test_p2_vllm_adapter.py
+new file mode 100644
+index 0000000..d4d24a5
+--- /dev/null
++++ b/tests/unit/test_p2_vllm_adapter.py
+@@ -0,0 +1,617 @@
++import json
++import asyncio
++import sys
++import tempfile
++import types
++import unittest
++from pathlib import Path
++
++from agentmon.adapters.vllm_018.events import VllmP2EventSink
++from agentmon.adapters.vllm_018 import hook as p2_hook
++from agentmon.adapters.vllm_018.kv import calculate_kv_pool
++from agentmon.adapters.vllm_018.version import UnsupportedVllmVersion, require_supported_vllm_version
++from agentmon.events import Event
++from agentmon.reporting.report import build_report
++from agentmon.reporting.summary import build_aggregate, build_run_summary
++from agentmon.storage.jsonl import JsonlWriter
++from agentmon.storage.sqlite import SqliteEventWriter
++
++
++class P2VllmAdapterTests(unittest.TestCase):
++    def test_version_gate_accepts_only_vllm_018_base_version(self) -> None:
++        self.assertEqual(require_supported_vllm_version("0.18.0"), "0.18.0")
++        self.assertEqual(require_supported_vllm_version("0.18.0+empty"), "0.18.0+empty")
++        with self.assertRaises(UnsupportedVllmVersion):
++            require_supported_vllm_version("0.19.0")
++
++    def test_kv_pool_formula_preserves_inputs_and_bytes_per_rank(self) -> None:
++        pool = calculate_kv_pool(
++            {
++                "num_gpu_blocks": 10,
++                "block_size": 16,
++                "cache_dtype": "bfloat16",
++                "num_layers_per_rank": 48,
++                "num_kv_heads_per_rank": 1,
++                "head_dim": 128,
++            },
++            source="cache_config",
++        )
++
++        self.assertEqual(pool["source_quality"], "complete")
++        self.assertEqual(pool["bytes_per_block_per_rank"], 393216)
++        self.assertEqual(pool["allocated_pool_bytes_per_rank"], 3932160)
++        self.assertEqual(pool["formula_version"], "kv_pool_bytes_per_rank.v1")
++
++    def test_p2_sink_emits_request_mapping_events(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            events_path = Path(tmp) / "events.jsonl"
++            sink = VllmP2EventSink(run_id="run-p2", events_path=events_path)
++            try:
++                sink.request_received(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    received_ns=100,
++                    model_name="qwen3-coder-30b",
++                )
++                sink.request_finished(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    received_ns=100,
++                    first_scheduled_ns=120,
++                    first_token_ns=200,
++                    finished_ns=300,
++                    finish_reason="stop",
++                    prompt_tokens=10,
++                    generation_tokens=3,
++                )
++            finally:
++                sink.close()
++
++            rows = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
++
++        self.assertEqual([row["source"] for row in rows], ["vllm_p2", "vllm_p2"])
++        self.assertEqual(rows[0]["event_type"], "vllm.request.received")
++        self.assertEqual(rows[0]["payload"]["agent_request_id"], "agent-1")
++        self.assertEqual(rows[0]["payload"]["vllm_request_id"], "vllm-1")
++        self.assertEqual(rows[1]["event_type"], "vllm.request.finished")
++        self.assertEqual(rows[1]["payload"]["first_token_ns"], 200)
++
++    def test_report_summary_and_p0_sqlite_check_understand_p2_mapping_events(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(
++                json.dumps({"run_id": "run-p2", "status": "success", "data_quality": {}}),
++                encoding="utf-8",
++            )
++            p0_event = Event(run_id="run-p2", source="controller", event_type="lifecycle", quality="exact")
++            with JsonlWriter(run_dir / "events.jsonl") as writer:
++                writer.write_event(p0_event)
++            sqlite = SqliteEventWriter(run_dir / "metrics.sqlite3")
++            sqlite.write_event(p0_event)
++            sqlite.close()
++
++            sink = VllmP2EventSink(run_id="run-p2", events_path=run_dir / "events.jsonl")
++            try:
++                sink.request_received(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    received_ns=100,
++                )
++                sink.request_finished(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    finished_ns=300,
++                )
++            finally:
++                sink.close()
++
++            report = build_report(run_dir)
++            summary = build_run_summary(report)
++
++        self.assertEqual(report["event_log"]["jsonl_total_count"], 3)
++        self.assertEqual(report["event_log"]["jsonl_p0_count"], 1)
++        self.assertEqual(report["event_log"]["jsonl_p2_count"], 2)
++        self.assertFalse(report["event_log"]["event_count_mismatch"])
++        self.assertEqual(report["vllm_p2"]["status"], "complete")
++        self.assertEqual(report["vllm_p2"]["request_count"], 1)
++        self.assertEqual(report["vllm_p2"]["correlation"]["direct"], 1)
++        self.assertEqual(summary["p2_status"], "complete")
++        self.assertEqual(summary["p2_request_count"], 1)
++        self.assertEqual(summary["p2_direct_correlation_count"], 1)
++
++    def test_report_and_summary_compute_p2_request_latencies_and_tokens(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(
++                json.dumps({"run_id": "run-p2", "status": "success", "data_quality": {}}),
++                encoding="utf-8",
++            )
++            sink = VllmP2EventSink(run_id="run-p2", events_path=run_dir / "events.jsonl")
++            try:
++                sink.request_received(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    received_ns=1_000_000_000,
++                )
++                sink.request_first_scheduled(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    first_scheduled_ns=1_200_000_000,
++                )
++                sink.request_prefill_completed(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    prefill_completed_ns=1_700_000_000,
++                    prompt_tokens=100,
++                    cached_prompt_tokens=25,
++                    computed_prefill_tokens=75,
++                    recomputed_prompt_tokens=0,
++                )
++                sink.request_first_token(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    first_token_ns=2_000_000_000,
++                )
++                sink.request_finished(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    finished_ns=4_000_000_000,
++                    generation_tokens=12,
++                    preemption_count=0,
++                )
++            finally:
++                sink.close()
++
++            report = build_report(run_dir)
++            summary = build_run_summary(report)
++            aggregate = build_aggregate([summary], reports=[report])
++
++        latency = report["vllm_p2"]["latency"]
++        tokens = report["vllm_p2"]["tokens"]
++        self.assertEqual(report["vllm_p2"]["request_count"], 1)
++        self.assertAlmostEqual(latency["queue"]["mean"], 0.2)
++        self.assertAlmostEqual(latency["prefill"]["mean"], 0.5)
++        self.assertAlmostEqual(latency["ttft"]["mean"], 1.0)
++        self.assertAlmostEqual(latency["decode"]["mean"], 2.0)
++        self.assertAlmostEqual(latency["e2e"]["mean"], 3.0)
++        self.assertEqual(tokens["prompt_tokens"]["total"], 100)
++        self.assertEqual(tokens["cached_prompt_tokens"]["total"], 25)
++        self.assertEqual(tokens["computed_prefill_tokens"]["total"], 75)
++        self.assertEqual(tokens["generation_tokens"]["total"], 12)
++        self.assertAlmostEqual(summary["p2_queue_latency"]["mean"], 0.2)
++        self.assertAlmostEqual(summary["p2_prefill_latency"]["mean"], 0.5)
++        self.assertAlmostEqual(summary["p2_decode_latency"]["mean"], 2.0)
++        self.assertEqual(summary["p2_prompt_tokens"], 100)
++        self.assertEqual(summary["p2_cached_prompt_tokens"], 25)
++        self.assertEqual(summary["p2_computed_prefill_tokens"], 75)
++        self.assertEqual(summary["p2_generation_tokens"], 12)
++        self.assertAlmostEqual(aggregate["p2_queue_latency"]["p50"], 0.2)
++        self.assertEqual(aggregate["p2_prompt_tokens"]["total"], 100)
++        self.assertEqual(aggregate["p2_generation_tokens"]["total"], 12)
++
++    def test_report_summary_and_aggregate_include_p2_kv_pool_states_and_npu_attribution(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(
++                json.dumps({"run_id": "run-p2", "status": "success", "data_quality": {}}),
++                encoding="utf-8",
++            )
++            sink = VllmP2EventSink(run_id="run-p2", events_path=run_dir / "events.jsonl")
++            try:
++                sink.kv_snapshot(
++                    prefix_cache_status="enabled",
++                    prefix_cache_queries=4,
++                    prefix_cache_hits=2,
++                    kv_usage_ratio=0.25,
++                    pool_inputs={
++                        "num_gpu_blocks": 10,
++                        "block_size": 16,
++                        "cache_dtype": "bf16",
++                        "num_layers_per_rank": 48,
++                        "num_kv_heads_per_rank": 1,
++                        "head_dim": 128,
++                    },
++                    source="cache_config",
++                )
++                sink.request_prefill_completed(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    prompt_tokens=100,
++                    cached_prompt_tokens=50,
++                    computed_prefill_tokens=50,
++                    recomputed_prompt_tokens=5,
++                )
++                sink.request_preempted(
++                    agent_request_id="agent-1",
++                    vllm_request_id="vllm-1",
++                    correlation_quality="direct",
++                    preemption_count=1,
++                )
++                sink.kv_block_event(request_id="vllm-1", allocated_block_count=8, freed_block_count=7, evicted_block_count=1)
++                sink.request_npu_attribution(
++                    vllm_request_id="vllm-1",
++                    agent_request_id="agent-1",
++                    attribution_quality="exclusive",
++                    npu_utilization_integral=12.5,
++                    sample_count=3,
++                )
++            finally:
++                sink.close()
++
++            report = build_report(run_dir)
++            summary = build_run_summary(report)
++            aggregate = build_aggregate([summary], reports=[report])
++
++        kv = report["vllm_p2"]["kv_cache"]
++        self.assertEqual(kv["prefix_cache_status"], "enabled")
++        self.assertEqual(kv["prefix_cache_hit_rate"], 0.5)
++        self.assertEqual(kv["state_counts"]["hit"], 1)
++        self.assertEqual(kv["state_counts"]["recomputed"], 1)
++        self.assertEqual(kv["state_counts"]["evicted"], 1)
++        self.assertEqual(kv["state_counts"]["preempted"], 1)
++        self.assertEqual(kv["kv_pool"]["allocated_pool_bytes_per_rank"], 3932160)
++        self.assertEqual(report["vllm_p2"]["npu_attribution"]["quality_counts"]["exclusive"], 1)
++        self.assertEqual(summary["p2_kv_prefix_cache_status"], "enabled")
++        self.assertEqual(summary["p2_kv_pool_bytes_per_rank"], 3932160)
++        self.assertEqual(summary["p2_npu_attribution_quality_counts"]["exclusive"], 1)
++        self.assertEqual(aggregate["p2_kv_state_counts"]["evicted"], 1)
++        self.assertEqual(aggregate["p2_npu_attribution_quality_counts"]["exclusive"], 1)
++
++    def test_p2_prefix_cache_disabled_zero_hit_and_no_sample_semantics(self) -> None:
++        disabled = build_p2_kv_report(
++            prefix_cache_status="disabled",
++            prefix_cache_queries=10,
++            prefix_cache_hits=0,
++            prompt_tokens=10,
++            cached_prompt_tokens=0,
++        )
++        self.assertEqual(disabled["prefix_cache_status"], "disabled")
++        self.assertIsNone(disabled["prefix_cache_hit_rate"])
++        self.assertEqual(disabled["prefix_cache_hit_rate_quality"], "disabled")
++        self.assertEqual(disabled["state_counts"]["disabled"], 1)
++
++        zero_hit = build_p2_kv_report(
++            prefix_cache_status="enabled",
++            prefix_cache_queries=10,
++            prefix_cache_hits=0,
++            prompt_tokens=10,
++            cached_prompt_tokens=0,
++        )
++        self.assertEqual(zero_hit["prefix_cache_status"], "enabled")
++        self.assertEqual(zero_hit["prefix_cache_hit_rate"], 0.0)
++        self.assertEqual(zero_hit["prefix_cache_hit_rate_quality"], "exact")
++        self.assertEqual(zero_hit["state_counts"]["enabled_zero_hit"], 1)
++
++        no_sample = build_p2_kv_report(prefix_cache_status="enabled")
++        self.assertEqual(no_sample["prefix_cache_status"], "enabled")
++        self.assertIsNone(no_sample["prefix_cache_hit_rate"])
++        self.assertEqual(no_sample["prefix_cache_hit_rate_quality"], "unavailable")
++
++    def test_runtime_hook_patches_real_v1_targets_and_preserves_return_values(self) -> None:
++        fake_module_names = install_fake_vllm_modules()
++        with tempfile.TemporaryDirectory() as tmp:
++            events_path = Path(tmp) / "events.jsonl"
++            sink = VllmP2EventSink(run_id="run-hook", events_path=events_path)
++            try:
++                result = p2_hook.install(sink=sink, force=True)
++                self.assertEqual(result["status"], "supported")
++                self.assertTrue(any("AsyncLLMEngine.add_request" in item for item in result["patched"]))
++                self.assertTrue(any("LLMEngine.add_request" in item for item in result["patched"]))
++
++                from vllm.v1.core.kv_cache_manager import KVCacheManager
++                from vllm.v1.core.sched.scheduler import Scheduler
++                from vllm.v1.engine.async_llm import AsyncLLMEngine
++                from vllm.v1.engine.core import EngineCore
++                from vllm.v1.engine.llm_engine import LLMEngine
++
++                async_engine = AsyncLLMEngine()
++                self.assertEqual(
++                    asyncio.run(
++                        async_engine.add_request(
++                            "async-req",
++                            trace_headers={"X-AgentMon-Request-Id": "agent-async"},
++                        )
++                    ),
++                    types.SimpleNamespace(request_id="async-req"),
++                )
++
++                engine = LLMEngine()
++                self.assertEqual(
++                    engine.add_request(
++                        "req-1",
++                        trace_headers={"X-AgentMon-Request-Id": "agent-1"},
++                    ),
++                    "req-1",
++                )
++                self.assertEqual([item.request_id for item in engine.step()], ["req-1"])
++
++                core = EngineCore()
++                request = FakeRequest("req-core")
++                self.assertEqual(core.add_request(request), "core-added")
++
++                scheduler = Scheduler()
++                self.assertEqual(scheduler.add_request(FakeRequest("req-scheduler")), "scheduler-added")
++                scheduler_output = scheduler.schedule()
++                self.assertEqual(scheduler_output.scheduled_new_reqs[0].req_id, "req-scheduler")
++                stats = scheduler.make_stats()
++                self.assertEqual(stats.prefix_cache_stats.queries, 10)
++
++                kv = KVCacheManager(enable_caching=False)
++                self.assertIs(kv.make_prefix_cache_stats(), kv.stats)
++            finally:
++                sink.close()
++                p2_hook.uninstall_for_tests()
++                clear_fake_modules(fake_module_names)
++
++            rows = [
++                json.loads(line)
++                for line in events_path.read_text(encoding="utf-8").splitlines()
++            ]
++
++        event_types = [row["event_type"] for row in rows]
++        self.assertIn("vllm.adapter.capability", event_types)
++        self.assertIn("vllm.request.received", event_types)
++        self.assertIn("vllm.request.finished", event_types)
++        self.assertIn("vllm.request.queued", event_types)
++        self.assertIn("vllm.request.first_scheduled", event_types)
++        self.assertIn("vllm.request.preempted", event_types)
++        self.assertIn("vllm.kv.snapshot", event_types)
++        received_agent_ids = [
++            row["payload"].get("agent_request_id")
++            for row in rows
++            if row["event_type"] == "vllm.request.received"
++        ]
++        self.assertIn("agent-async", received_agent_ids)
++        self.assertIn("agent-1", received_agent_ids)
++        disabled_snapshots = [
++            row
++            for row in rows
++            if row["event_type"] == "vllm.kv.snapshot"
++            and row["payload"].get("prefix_cache_status") == "disabled"
++        ]
++        self.assertTrue(disabled_snapshots)
++        self.assertIsNone(disabled_snapshots[-1]["payload"]["prefix_cache_queries"])
++        report = build_report_from_events(rows)
++        self.assertEqual(report["vllm_p2"]["kv_cache"]["prefix_cache_status"], "disabled")
++        self.assertIsNone(report["vllm_p2"]["kv_cache"]["prefix_cache_hit_rate"])
++
++    def test_runtime_hook_unsupported_version_does_not_patch(self) -> None:
++        fake_module_names = install_fake_vllm_modules(version="0.19.0")
++        try:
++            result = p2_hook.install(force=True)
++            self.assertEqual(result["status"], "unsupported")
++            from vllm.v1.engine.llm_engine import LLMEngine
++
++            self.assertFalse(getattr(LLMEngine.add_request, p2_hook.INSTALLED_ATTR, False))
++        finally:
++            p2_hook.uninstall_for_tests()
++            clear_fake_modules(fake_module_names)
++
++
++def build_report_from_events(rows: list[dict[str, object]]) -> dict[str, object]:
++    with tempfile.TemporaryDirectory() as tmp:
++        run_dir = Path(tmp)
++        (run_dir / "manifest.json").write_text(
++            json.dumps({"run_id": "run-hook", "status": "success", "data_quality": {}}),
++            encoding="utf-8",
++        )
++        (run_dir / "events.jsonl").write_text(
++            "\n".join(json.dumps(row) for row in rows) + "\n",
++            encoding="utf-8",
++        )
++        return build_report(run_dir)
++
++
++def build_p2_kv_report(
++    *,
++    prefix_cache_status: str,
++    prefix_cache_queries: int | None = None,
++    prefix_cache_hits: int | None = None,
++    prompt_tokens: int | None = None,
++    cached_prompt_tokens: int | None = None,
++) -> dict[str, object]:
++    with tempfile.TemporaryDirectory() as tmp:
++        run_dir = Path(tmp)
++        (run_dir / "manifest.json").write_text(
++            json.dumps({"run_id": "run-kv", "status": "success", "data_quality": {}}),
++            encoding="utf-8",
++        )
++        sink = VllmP2EventSink(run_id="run-kv", events_path=run_dir / "events.jsonl")
++        try:
++            sink.kv_snapshot(
++                prefix_cache_status=prefix_cache_status,
++                prefix_cache_queries=prefix_cache_queries,
++                prefix_cache_hits=prefix_cache_hits,
++            )
++            if prompt_tokens is not None or cached_prompt_tokens is not None:
++                sink.request_prefill_completed(
++                    agent_request_id=None,
++                    vllm_request_id="req-kv",
++                    correlation_quality="server_generated",
++                    prompt_tokens=prompt_tokens,
++                    cached_prompt_tokens=cached_prompt_tokens,
++                )
++        finally:
++            sink.close()
++        return build_report(run_dir)["vllm_p2"]["kv_cache"]
++
++
++class FakeCompletion:
++    def __init__(self) -> None:
++        self.token_ids = [101, 102]
++        self.finish_reason = "stop"
++
++
++class FakeRequestOutput:
++    def __init__(self, request_id: str, *, finished: bool = True) -> None:
++        self.request_id = request_id
++        self.finished = finished
++        self.outputs = [FakeCompletion()]
++        self.prompt_token_ids = [1, 2, 3]
++        self.num_cached_tokens = 0
++
++
++class FakeRequest:
++    def __init__(self, request_id: str) -> None:
++        self.request_id = request_id
++        self.trace_headers = None
++        self.num_prompt_tokens = 5
++        self.num_cached_tokens = -1
++        self.num_computed_tokens = 0
++        self.num_preemptions = 0
++
++
++class FakeNewRequestData:
++    def __init__(self, req_id: str) -> None:
++        self.req_id = req_id
++        self.prompt_token_ids = [1, 2, 3]
++        self.num_computed_tokens = 0
++
++
++class FakeSchedulerOutput:
++    def __init__(self) -> None:
++        self.scheduled_new_reqs = [FakeNewRequestData("req-scheduler")]
++        self.preempted_req_ids = {"req-preempted"}
++
++
++class FakePrefixStats:
++    def __init__(self, *, queries: int = 10, hits: int = 4) -> None:
++        self.queries = queries
++        self.hits = hits
++        self.requests = 1
++
++
++class FakeSchedulerStats:
++    def __init__(self) -> None:
++        self.prefix_cache_stats = FakePrefixStats()
++        self.kv_cache_usage = 0.25
++        self.kv_cache_eviction_events = [types.SimpleNamespace(block_ids=[1, 2])]
++
++
++class FakeCacheConfig:
++    def __init__(self) -> None:
++        self.enable_prefix_caching = False
++        self.num_gpu_blocks = 10
++        self.block_size = 16
++        self.cache_dtype = "bf16"
++
++
++class FakeParallelConfig:
++    pass
++
++
++class FakeModelConfig:
++    model = "qwen3-coder"
++
++    def get_num_layers_by_block_type(self, parallel_config: object, block_type: str = "attention") -> int:
++        return 48
++
++    def get_num_kv_heads(self, parallel_config: object) -> int:
++        return 1
++
++    def get_head_size(self) -> int:
++        return 128
++
++
++class FakeVllmConfig:
++    def __init__(self) -> None:
++        self.cache_config = FakeCacheConfig()
++        self.parallel_config = FakeParallelConfig()
++        self.model_config = FakeModelConfig()
++
++
++def install_fake_vllm_modules(*, version: str = "0.18.0") -> list[str]:
++    names = [
++        "vllm",
++        "vllm.v1",
++        "vllm.v1.engine",
++        "vllm.v1.engine.llm_engine",
++        "vllm.v1.engine.core",
++        "vllm.v1.engine.async_llm",
++        "vllm.v1.core",
++        "vllm.v1.core.sched",
++        "vllm.v1.core.sched.scheduler",
++        "vllm.v1.core.kv_cache_manager",
++    ]
++    for name in names:
++        module = types.ModuleType(name)
++        if name == "vllm":
++            module.__version__ = version
++        sys.modules[name] = module
++
++    class LLMEngine:
++        model_config = FakeModelConfig()
++
++        def add_request(self, request_id: str, *args: object, **kwargs: object) -> str:
++            return request_id
++
++        def step(self) -> list[FakeRequestOutput]:
++            return [FakeRequestOutput("req-1")]
++
++    class EngineCore:
++        def add_request(self, request: FakeRequest, request_wave: int = 0) -> str:
++            return "core-added"
++
++        def step(self) -> tuple[dict[int, object], bool]:
++            outputs = types.SimpleNamespace(
++                scheduler_stats=FakeSchedulerStats(),
++                outputs=[types.SimpleNamespace(request_id="req-core", finished=True, finish_reason="stop", num_cached_tokens=0)],
++            )
++            return {0: outputs}, True
++
++    class AsyncLLMEngine:
++        async def add_request(self, request_id: str, *args: object, **kwargs: object) -> object:
++            return types.SimpleNamespace(request_id=request_id)
++
++        async def generate(self, *args: object, **kwargs: object) -> object:
++            yield FakeRequestOutput(str(kwargs.get("request_id") or "async-req"))
++
++        async def abort(self, request_id: str, internal: bool = False) -> None:
++            return None
++
++    class Scheduler:
++        def __init__(self) -> None:
++            self.cache_config = FakeCacheConfig()
++            self.vllm_config = FakeVllmConfig()
++            self.parallel_config = self.vllm_config.parallel_config
++            self.block_size = 16
++
++        def add_request(self, request: FakeRequest) -> str:
++            return "scheduler-added"
++
++        def schedule(self) -> FakeSchedulerOutput:
++            return FakeSchedulerOutput()
++
++        def make_stats(self) -> FakeSchedulerStats:
++            return FakeSchedulerStats()
++
++    class KVCacheManager:
++        def __init__(self, *, enable_caching: bool = True) -> None:
++            self.enable_caching = enable_caching
++            self.usage = 0.5
++            self.stats = FakePrefixStats()
++
++        def make_prefix_cache_stats(self) -> FakePrefixStats:
++            return self.stats
++
++    sys.modules["vllm.v1.engine.llm_engine"].LLMEngine = LLMEngine
++    sys.modules["vllm.v1.engine.core"].EngineCore = EngineCore
++    sys.modules["vllm.v1.engine.async_llm"].AsyncLLMEngine = AsyncLLMEngine
++    sys.modules["vllm.v1.core.sched.scheduler"].Scheduler = Scheduler
++    sys.modules["vllm.v1.core.kv_cache_manager"].KVCacheManager = KVCacheManager
++    return names
++
++
++def clear_fake_modules(names: list[str]) -> None:
++    for name in names:
++        sys.modules.pop(name, None)
+diff --git a/tests/unit/test_prefix_cache_experiment.py b/tests/unit/test_prefix_cache_experiment.py
+new file mode 100644
+index 0000000..de24e18
+--- /dev/null
++++ b/tests/unit/test_prefix_cache_experiment.py
+@@ -0,0 +1,80 @@
++import io
++import json
++import tempfile
++import unittest
++from contextlib import redirect_stdout
++from pathlib import Path
++
++from agentmon.cli import main as agentmon_main
++from tests.unit.test_summary import make_report
++
++
++class PrefixCacheExperimentTests(unittest.TestCase):
++    def test_prefix_cache_planner_outputs_non_mutating_json_plan(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            run_dir = root / "run-baseline"
++            run_dir.mkdir()
++            report = make_report(run_id="run-baseline", prefix_status="disabled")
++            (run_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
++            variant = root / "variant.toml"
++            variant.write_text("enable-prefix-caching = true\n", encoding="utf-8")
++
++            exit_code, output = run_cli(
++                "experiment",
++                "plan",
++                "prefix-cache",
++                "--output-root",
++                str(root),
++                "--baseline-run",
++                "run-baseline",
++                "--variant-config",
++                str(variant),
++                "--format",
++                "json",
++            )
++
++        plan = json.loads(output)
++        self.assertEqual(exit_code, 0)
++        self.assertEqual(plan["experiment_type"], "prefix-cache")
++        self.assertFalse(plan["mutates_service"])
++        self.assertEqual(plan["variant_config"]["prefix_cache_hint"], "enabled")
++        self.assertEqual(plan["baseline_run_count"], 1)
++        self.assertIn("request_ttft_mean", plan["metrics_to_compare"])
++
++    def test_prefix_cache_planner_table_output(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            run_dir = root / "run-baseline"
++            run_dir.mkdir()
++            (run_dir / "report.json").write_text(
++                json.dumps(make_report(run_id="run-baseline", prefix_status="disabled")),
++                encoding="utf-8",
++            )
++            variant = root / "variant.toml"
++            variant.write_text("--enable-prefix-caching\n", encoding="utf-8")
++
++            exit_code, output = run_cli(
++                "experiment",
++                "plan",
++                "prefix-cache",
++                "--output-root",
++                str(root),
++                "--baseline-run",
++                "run-baseline",
++                "--variant-config",
++                str(variant),
++                "--format",
++                "table",
++            )
++
++        self.assertEqual(exit_code, 0)
++        self.assertIn("mutates_service", output)
++        self.assertIn("check.variant_config_exists", output)
++
++
++def run_cli(*args: str) -> tuple[int, str]:
++    stdout = io.StringIO()
++    with redirect_stdout(stdout):
++        exit_code = agentmon_main(list(args))
++    return exit_code, stdout.getvalue()

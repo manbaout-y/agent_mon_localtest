@@ -1,0 +1,10 @@
+{
+  "archive": "E:\\agentproject\\agent_mon-ver_hetero_state\\dist\\hetero_state_lab_source_20260924.tar.gz",
+  "members": 646,
+  "paper_spec_members": 67,
+  "gitignore_members": [
+    "hetero_state_lab/.gitignore"
+  ],
+  "sha256": "98ab42c21a2121d5f293cb92f95068780ceed30cfa163fcadd32a3e161944e48",
+  "recorded_checksum": "98ab42c21a2121d5f293cb92f95068780ceed30cfa163fcadd32a3e161944e48  hetero_state_lab_source_20260924.tar.gz"
+}

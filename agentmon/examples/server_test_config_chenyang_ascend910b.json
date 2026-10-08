@@ -1,0 +1,38 @@
+{
+  "server_profile": "examples/server_profiles/chenyang_ascend910b.json",
+  "actions": [
+    "self_check"
+  ],
+  "report_dir": "",
+  "self_check": {
+    "run_unit_tests": false
+  },
+  "offline_analysis": {
+    "input_path": "",
+    "output_path": "",
+    "profile": "auto",
+    "output_format": "csv",
+    "jobs": 8,
+    "analysis_preflight": true,
+    "fast_smoke": true,
+    "skip_evidence": true,
+    "skip_handoff": true,
+    "skip_model_pack": true,
+    "experiment_contract": "",
+    "omit_normalized_tables": [
+      "event_inventory"
+    ],
+    "force": false,
+    "resume": true,
+    "fresh": false,
+    "strict": false,
+    "timeout_seconds": null
+  },
+  "preflight": {
+    "expect_prefix_cache": "any",
+    "require_runtime_p2": false,
+    "runtime_base_url": "",
+    "runtime_model": "",
+    "runtime_stream_probe": false
+  }
+}

@@ -1,0 +1,831 @@
+diff --git a/scripts/agentmon_perf_summary.py b/scripts/agentmon_perf_summary.py
+new file mode 100644
+index 0000000..a0f258a
+--- /dev/null
++++ b/scripts/agentmon_perf_summary.py
+@@ -0,0 +1,283 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import csv
++import io
++import json
++import math
++from pathlib import Path
++import sys
++from typing import Any, Sequence
++
++from agentmon.reporting.report import build_report
++
++
++SCHEMA_VERSION = "1.0"
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    args = build_parser().parse_args(argv)
++    try:
++        summary = build_perf_summary(
++            Path(args.run_dir),
++            p2_events=Path(args.p2_events) if args.p2_events else None,
++            p2_attribution_quality=args.p2_attribution_quality,
++        )
++        print(format_summary(summary, args.format))
++    except Exception as exc:
++        print(f"agentmon perf summary error: {exc}", file=sys.stderr)
++        return 2
++    return 0
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Summarize AgentMon run performance metrics")
++    parser.add_argument("run_dir", help="AgentMon run directory containing report.json")
++    parser.add_argument("--p2-events", help="optional service-scoped P2 events.jsonl")
++    parser.add_argument(
++        "--p2-attribution-quality",
++        default="service_stream",
++        choices=["service_stream", "service_exclusive"],
++        help="quality label for an independent P2 service event stream",
++    )
++    parser.add_argument("--format", choices=["table", "json", "csv"], default="table")
++    return parser
++
++
++def build_perf_summary(
++    run_dir: Path,
++    *,
++    p2_events: Path | None = None,
++    p2_attribution_quality: str = "service_stream",
++) -> dict[str, Any]:
++    report = load_report(run_dir)
++    proc = as_dict(report.get("proc"))
++    ascend = as_dict(report.get("ascend"))
++    agent = as_dict(report.get("agent"))
++    p1 = as_dict(report.get("p1_spans"))
++    vllm = as_dict(report.get("vllm"))
++    kv_cache = as_dict(report.get("kv_cache"))
++    data_quality = as_dict(report.get("data_quality"))
++
++    row: dict[str, Any] = {
++        "schema_version": SCHEMA_VERSION,
++        "summary_type": "agentmon.performance_summary",
++        "run_id": report.get("run_id"),
++        "run_status": report.get("status"),
++        "exit_code": report.get("exit_code"),
++        "duration_seconds": report.get("duration_s"),
++        "data_quality": data_quality,
++        "agent_status": agent.get("status"),
++        "agent_exit_status": agent.get("exit_status"),
++        "agent_message_count": agent.get("message_count"),
++        "agent_assistant_turns": agent.get("assistant_turns"),
++        "agent_api_calls": agent.get("api_calls"),
++        "agent_tool_calls": agent.get("tool_calls"),
++        "agent_prompt_tokens": agent.get("prompt_tokens"),
++        "agent_completion_tokens": agent.get("completion_tokens"),
++        "agent_cached_tokens": agent.get("cached_tokens"),
++        "agent_instance_cost": agent.get("instance_cost"),
++        "p1_status": p1.get("status"),
++        "p1_agent_steps": p1.get("agent_steps"),
++        "p1_model_requests": p1.get("model_requests"),
++        "p1_tool_calls": p1.get("tool_calls"),
++        "p1_open_spans": p1.get("open_span_count"),
++        "p1_abandoned_spans": p1.get("abandoned_span_count"),
++        "proc_status": proc.get("status"),
++        "proc_sample_count": proc.get("sample_count"),
++        "proc_agent_process_count_last": proc.get("agent_process_count_last"),
++        "proc_agent_peak_pss_bytes": proc.get("agent_peak_pss_bytes"),
++        "proc_agent_peak_rss_bytes": proc.get("agent_peak_rss_bytes"),
++        "proc_agent_pss_quality": proc.get("agent_pss_quality"),
++        "ascend_status": ascend.get("status"),
++        "ascend_sample_count": ascend.get("sample_count"),
++        "ascend_parser_confidence": ascend.get("parser_confidence"),
++        "ascend_peak_hbm_used_bytes": ascend_peak(ascend, "peak_hbm_used_bytes"),
++        "ascend_max_aicore_util_pct": ascend_peak(ascend, "max_aicore_util_pct"),
++        "vllm_status": vllm.get("status"),
++        "vllm_sample_count": vllm.get("sample_count"),
++        "vllm_metric_count_last": vllm.get("metric_count_last"),
++        "vllm_counter_delta_count": len(as_dict(vllm.get("counter_deltas"))),
++        "kv_cache_status": kv_cache.get("prefix_cache_status"),
++        "kv_cache_hit_rate": None if kv_cache.get("prefix_cache_status") == "disabled" else kv_cache.get("prefix_cache_hit_rate"),
++        "kv_cache_hit_rate_quality": kv_cache.get("prefix_cache_hit_rate_quality"),
++        "kv_cache_usage_ratio_max": kv_cache.get("kv_cache_usage_ratio_max"),
++        "kv_cache_usage_quality": kv_cache.get("kv_cache_usage_quality"),
++    }
++    if p2_events is not None:
++        row.update(flatten_p2_summary(read_jsonl_events(p2_events), p2_attribution_quality=p2_attribution_quality))
++    return row
++
++
++def load_report(run_dir: Path) -> dict[str, Any]:
++    report_path = run_dir / "report.json"
++    if report_path.exists():
++        return json.loads(report_path.read_text(encoding="utf-8"))
++    return build_report(run_dir)
++
++
++def read_jsonl_events(path: Path) -> list[dict[str, Any]]:
++    events: list[dict[str, Any]] = []
++    if not path.exists():
++        return events
++    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
++        if not line.strip():
++            continue
++        events.append(json.loads(line))
++    return events
++
++
++def flatten_p2_summary(events: list[dict[str, Any]], *, p2_attribution_quality: str) -> dict[str, Any]:
++    request_rows: dict[str, dict[str, Any]] = {}
++    kv_usage_values: list[float] = []
++    latest_prefix_status: str | None = None
++    latest_prefix_queries: float | int | None = None
++    latest_prefix_hits: float | int | None = None
++    for event in events:
++        if event.get("source") != "vllm_p2":
++            continue
++        event_type = str(event.get("event_type") or "")
++        payload = as_dict(event.get("payload"))
++        if event_type.startswith("vllm.request."):
++            request_id = payload.get("vllm_request_id") or payload.get("request_id") or payload.get("agent_request_id")
++            if request_id in {None, ""}:
++                continue
++            row = request_rows.setdefault(str(request_id), {})
++            for key in (
++                "received_ns",
++                "queued_ns",
++                "first_scheduled_ns",
++                "finished_ns",
++                "prompt_tokens",
++                "generation_tokens",
++                "preemption_count",
++            ):
++                if payload.get(key) is not None:
++                    row[key] = payload.get(key)
++        elif event_type == "vllm.kv.snapshot":
++            latest_prefix_status = none_if_empty(payload.get("prefix_cache_status"))
++            latest_prefix_queries = numeric_or_none(payload.get("prefix_cache_queries"))
++            latest_prefix_hits = numeric_or_none(payload.get("prefix_cache_hits"))
++            usage = numeric_or_none(payload.get("kv_usage_ratio"))
++            if usage is not None:
++                kv_usage_values.append(float(usage))
++        elif event_type == "vllm.kv.block_event":
++            for key in ("kv_usage_before", "kv_usage_after"):
++                usage = numeric_or_none(payload.get(key))
++                if usage is not None:
++                    kv_usage_values.append(float(usage))
++
++    rows = list(request_rows.values())
++    prefix_status = latest_prefix_status or "unknown"
++    if prefix_status == "disabled":
++        prefix_hit_rate = None
++    elif latest_prefix_queries is not None and latest_prefix_queries > 0 and latest_prefix_hits is not None:
++        prefix_hit_rate = latest_prefix_hits / latest_prefix_queries
++    else:
++        prefix_hit_rate = None
++    return {
++        "p2_correlation_scope": "service_stream",
++        "p2_attribution_quality": p2_attribution_quality,
++        "p2_request_count": len(rows),
++        "p2_received_to_queued_ms": latency_ms_stats(
++            [ns_delta_ms(row.get("received_ns"), row.get("queued_ns")) for row in rows]
++        ),
++        "p2_queued_to_first_scheduled_ms": latency_ms_stats(
++            [ns_delta_ms(row.get("queued_ns"), row.get("first_scheduled_ns")) for row in rows]
++        ),
++        "p2_first_scheduled_to_finished_ms": latency_ms_stats(
++            [ns_delta_ms(row.get("first_scheduled_ns"), row.get("finished_ns")) for row in rows]
++        ),
++        "p2_total_ms": latency_ms_stats(
++            [ns_delta_ms(row.get("received_ns"), row.get("finished_ns")) for row in rows]
++        ),
++        "p2_prompt_tokens_total": sum_numeric(row.get("prompt_tokens") for row in rows),
++        "p2_generation_tokens_total": sum_numeric(row.get("generation_tokens") for row in rows),
++        "p2_preemption_count_total": sum_numeric(row.get("preemption_count") for row in rows),
++        "p2_kv_usage_peak": max(kv_usage_values) if kv_usage_values else None,
++        "p2_prefix_cache_status": prefix_status,
++        "p2_prefix_cache_hit_rate": prefix_hit_rate,
++    }
++
++
++def format_summary(summary: dict[str, Any], fmt: str) -> str:
++    if fmt == "json":
++        return json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True)
++    if fmt == "csv":
++        output = io.StringIO()
++        writer = csv.writer(output)
++        writer.writerow(["metric", "value"])
++        for key, value in summary.items():
++            writer.writerow([key, display_value(value)])
++        return output.getvalue().rstrip("\n")
++    lines = ["Metric | Value", "--- | ---"]
++    for key, value in summary.items():
++        lines.append(f"{key} | {display_value(value)}")
++    return "\n".join(lines)
++
++
++def display_value(value: Any) -> str:
++    if value is None:
++        return "N/A"
++    if isinstance(value, (dict, list)):
++        return json.dumps(value, ensure_ascii=False, sort_keys=True)
++    return str(value)
++
++
++def ascend_peak(ascend: dict[str, Any], key: str) -> Any:
++    values = []
++    devices = ascend.get("devices")
++    if not isinstance(devices, dict):
++        return None
++    for device in devices.values():
++        if isinstance(device, dict):
++            value = numeric_or_none(device.get(key))
++            if value is not None:
++                values.append(value)
++    return max(values) if values else None
++
++
++def latency_ms_stats(values: list[float | None]) -> dict[str, Any]:
++    clean = [value for value in values if value is not None and math.isfinite(float(value))]
++    return {
++        "mean": (sum(clean) / len(clean)) if clean else None,
++        "max": max(clean) if clean else None,
++        "sample_count": len(clean),
++    }
++
++
++def ns_delta_ms(start: Any, end: Any) -> float | None:
++    if not isinstance(start, int) or not isinstance(end, int):
++        return None
++    delta = end - start
++    if delta < 0:
++        return None
++    return delta / 1_000_000
++
++
++def sum_numeric(values: Any) -> float | int | None:
++    clean = [value for value in (numeric_or_none(item) for item in values) if value is not None]
++    return sum(clean) if clean else None
++
++
++def numeric_or_none(value: Any) -> float | int | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, (int, float)) and math.isfinite(float(value)):
++        return value
++    return None
++
++
++def none_if_empty(value: Any) -> str | None:
++    if value in {None, ""}:
++        return None
++    return str(value)
++
++
++def as_dict(value: Any) -> dict[str, Any]:
++    return value if isinstance(value, dict) else {}
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/src/agentmon/run_controller.py b/src/agentmon/run_controller.py
+index 8d8bfe4..5a76400 100644
+--- a/src/agentmon/run_controller.py
++++ b/src/agentmon/run_controller.py
+@@ -47,10 +47,11 @@ class RunController:
+         self.cfg = cfg
+         self.label = label
+         self.cwd = cwd or os.getcwd()
+-        self.trajectory = trajectory
+         self.run_id = make_run_id()
+         self.run_dir = output_root(cfg) / self.run_id
+         self.argv = expand_run_id_placeholders(list(argv), self.run_id)
++        self.trajectory = expand_run_id_placeholders([trajectory], self.run_id)[0] if trajectory else None
++        self.detected_trajectory_paths = detect_trajectory_output_paths(self.argv)
+         self.raw_dir = self.run_dir / "raw"
+         self.logs_dir = self.run_dir / "logs"
+         self.child_pid: int | None = None
+@@ -302,6 +303,8 @@ class RunController:
+         paths: list[Path]
+         if self.trajectory:
+             paths = [Path(self.trajectory).expanduser()]
++        elif self.detected_trajectory_paths:
++            paths = [path.expanduser() for path in self.detected_trajectory_paths]
+         else:
+             paths = find_new_or_modified_trajectories(self.cfg.agent.trajectory_glob, before)
+         if not paths:
+@@ -314,6 +317,19 @@ class RunController:
+             )
+             return
+         for path in paths:
++            if not path.is_file():
++                sink.emit(
++                    "trajectory",
++                    "error",
++                    "estimated",
++                    payload={
++                        "status": "missing",
++                        "path": str(path),
++                        "message": "trajectory file does not exist",
++                    },
++                    critical=True,
++                )
++                continue
+             try:
+                 imported = import_trajectory(path, run_id=self.run_id, raw_dir=self.raw_dir / "trajectory")
+                 sink.emit("trajectory", "sample", "estimated", payload=imported, critical=True)
+@@ -345,6 +361,23 @@ def expand_run_id_placeholders(argv: list[str], run_id: str) -> list[str]:
+     ]
+ 
+ 
++def detect_trajectory_output_paths(argv: Sequence[str]) -> list[Path]:
++    paths: list[Path] = []
++    index = 0
++    while index < len(argv):
++        item = argv[index]
++        if item in {"-o", "--output"} and index + 1 < len(argv):
++            paths.append(Path(argv[index + 1]))
++            index += 2
++            continue
++        if item.startswith("--output="):
++            value = item.split("=", 1)[1]
++            if value:
++                paths.append(Path(value))
++        index += 1
++    return paths
++
++
+ def build_child_env(
+     cfg: AgentMonConfig,
+     run_id: str,
+diff --git a/src/agentmon/trajectory/mini_swe.py b/src/agentmon/trajectory/mini_swe.py
+index 18891f6..bd2e972 100644
+--- a/src/agentmon/trajectory/mini_swe.py
++++ b/src/agentmon/trajectory/mini_swe.py
+@@ -59,6 +59,7 @@ def summarize_trajectory(data: dict[str, Any]) -> dict[str, Any]:
+     messages = data.get("messages") or data.get("trajectory") or []
+     model_stats = info.get("model_stats") or data.get("model_stats") or {}
+     summary: dict[str, Any] = {
++        "status": "complete",
+         "trajectory_format": data.get("trajectory_format") or info.get("trajectory_format"),
+         "mini_version": info.get("mini_version") or info.get("version"),
+         "message_count": len(messages) if isinstance(messages, list) else 0,
+diff --git a/tests/unit/test_perf_summary.py b/tests/unit/test_perf_summary.py
+new file mode 100644
+index 0000000..94203f5
+--- /dev/null
++++ b/tests/unit/test_perf_summary.py
+@@ -0,0 +1,158 @@
++import importlib.util
++import json
++import tempfile
++import unittest
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[2]
++SCRIPT_PATH = ROOT / "scripts" / "agentmon_perf_summary.py"
++SPEC = importlib.util.spec_from_file_location("agentmon_perf_summary", SCRIPT_PATH)
++assert SPEC is not None and SPEC.loader is not None
++perf_summary = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(perf_summary)
++
++
++class PerfSummaryTests(unittest.TestCase):
++    def test_perf_summary_uses_canonical_proc_and_ascend_keys(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            write_report(
++                run_dir,
++                {
++                    "run_id": "run-perf",
++                    "status": "success",
++                    "exit_code": 0,
++                    "duration_s": 12.5,
++                    "data_quality": {"proc": "complete", "npu": "complete"},
++                    "agent": {"status": "complete", "message_count": 2},
++                    "p1_spans": {"status": "complete", "agent_steps": 1, "model_requests": 1, "tool_calls": 1},
++                    "proc": {
++                        "status": "complete",
++                        "sample_count": 3,
++                        "agent_peak_pss_bytes": 123,
++                        "agent_peak_rss_bytes": 456,
++                        "agent_pss_quality": "exact",
++                    },
++                    "ascend": {
++                        "status": "complete",
++                        "sample_count": 2,
++                        "parser_confidence": 0.9,
++                        "devices": {
++                            "0": {"peak_hbm_used_bytes": 1024, "max_aicore_util_pct": 87.5},
++                            "1": {"peak_hbm_used_bytes": 2048, "max_aicore_util_pct": 66.0},
++                        },
++                    },
++                    "vllm": {"status": "complete", "sample_count": 2, "counter_deltas": {"x": 1}},
++                    "kv_cache": {
++                        "prefix_cache_status": "disabled",
++                        "prefix_cache_hit_rate": None,
++                        "prefix_cache_hit_rate_quality": "disabled",
++                    },
++                },
++            )
++
++            summary = perf_summary.build_perf_summary(run_dir)
++            table = perf_summary.format_summary(summary, "table")
++            csv_text = perf_summary.format_summary(summary, "csv")
++            json_text = perf_summary.format_summary(summary, "json")
++
++        self.assertEqual(summary["proc_agent_peak_pss_bytes"], 123)
++        self.assertEqual(summary["proc_agent_peak_rss_bytes"], 456)
++        self.assertEqual(summary["ascend_peak_hbm_used_bytes"], 2048)
++        self.assertEqual(summary["ascend_max_aicore_util_pct"], 87.5)
++        self.assertIsNone(summary["kv_cache_hit_rate"])
++        self.assertIn("proc_agent_peak_pss_bytes | 123", table)
++        self.assertIn("ascend_peak_hbm_used_bytes | 2048", table)
++        self.assertIn("proc_agent_peak_pss_bytes,123", csv_text)
++        self.assertEqual(json.loads(json_text)["ascend_peak_hbm_used_bytes"], 2048)
++
++    def test_perf_summary_reads_service_scoped_p2_stream(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp) / "run"
++            run_dir.mkdir()
++            write_report(
++                run_dir,
++                {
++                    "run_id": "run-p2",
++                    "status": "success",
++                    "exit_code": 0,
++                    "agent": {},
++                    "p1_spans": {},
++                    "proc": {},
++                    "ascend": {},
++                    "vllm": {},
++                    "kv_cache": {},
++                    "data_quality": {},
++                },
++            )
++            p2_events = Path(tmp) / "p2-events.jsonl"
++            write_jsonl(
++                p2_events,
++                [
++                    p2_event("vllm.request.received", {"vllm_request_id": "req-1", "received_ns": 1_000}),
++                    p2_event("vllm.request.queued", {"vllm_request_id": "req-1", "queued_ns": 2_000}),
++                    p2_event(
++                        "vllm.request.first_scheduled",
++                        {"vllm_request_id": "req-1", "first_scheduled_ns": 5_000, "prompt_tokens": 10},
++                    ),
++                    p2_event(
++                        "vllm.request.finished",
++                        {
++                            "vllm_request_id": "req-1",
++                            "finished_ns": 11_000,
++                            "generation_tokens": 3,
++                            "preemption_count": 0,
++                        },
++                    ),
++                    p2_event(
++                        "vllm.kv.snapshot",
++                        {
++                            "prefix_cache_status": "disabled",
++                            "prefix_cache_queries": None,
++                            "prefix_cache_hits": None,
++                            "kv_usage_ratio": 0.25,
++                        },
++                    ),
++                ],
++            )
++
++            summary = perf_summary.build_perf_summary(
++                run_dir,
++                p2_events=p2_events,
++                p2_attribution_quality="service_exclusive",
++            )
++            table = perf_summary.format_summary(summary, "table")
++
++        self.assertEqual(summary["p2_correlation_scope"], "service_stream")
++        self.assertEqual(summary["p2_attribution_quality"], "service_exclusive")
++        self.assertEqual(summary["p2_request_count"], 1)
++        self.assertEqual(summary["p2_prompt_tokens_total"], 10)
++        self.assertEqual(summary["p2_generation_tokens_total"], 3)
++        self.assertEqual(summary["p2_kv_usage_peak"], 0.25)
++        self.assertEqual(summary["p2_prefix_cache_status"], "disabled")
++        self.assertIsNone(summary["p2_prefix_cache_hit_rate"])
++        self.assertIn("p2_prefix_cache_hit_rate | N/A", table)
++
++
++def write_report(run_dir: Path, report: dict[str, object]) -> None:
++    (run_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
++
++
++def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
++    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
++
++
++def p2_event(event_type: str, payload: dict[str, object]) -> dict[str, object]:
++    return {
++        "schema_version": "1.0",
++        "event_id": f"id-{event_type}-{len(json.dumps(payload, sort_keys=True))}",
++        "run_id": "p2-stream",
++        "source": "vllm_p2",
++        "event_type": event_type,
++        "wall_time_ns": 1,
++        "monotonic_time_ns": 1,
++        "quality": "exact",
++        "labels": {},
++        "payload": payload,
++    }
+diff --git a/tests/unit/test_run_controller.py b/tests/unit/test_run_controller.py
+index 8fdaf1b..474e592 100644
+--- a/tests/unit/test_run_controller.py
++++ b/tests/unit/test_run_controller.py
+@@ -3,6 +3,7 @@ import os
+ import subprocess
+ import sys
+ import tempfile
++import textwrap
+ import unittest
+ from pathlib import Path
+ 
+@@ -133,3 +134,283 @@ command_timeout_seconds = 0.05
+             self.assertIsNone(child_data["pythonhome"])
+             self.assertEqual(child_data["py_no_user_site"], "1")
+             self.assertEqual(child_data["no_proxy"], "127.0.0.1,localhost,::1")
++
++    def test_run_imports_detected_trajectory_output_with_run_id_placeholder(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            child_script = write_fake_mini_swe_child(Path(tmp))
++            output_template = str(Path(tmp) / "trajectories" / "task-{run_id}.traj.json")
++            result, run_dir = run_agentmon_fake_child(
++                tmp,
++                [
++                    sys.executable,
++                    str(child_script),
++                    "-o",
++                    output_template,
++                ],
++            )
++
++            self.assertEqual(result.returncode, 0, result.stderr)
++            manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
++            report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
++            self.assertEqual(manifest["data_quality"]["trajectory"], "complete")
++            self.assertEqual(report["agent"]["status"], "complete")
++            self.assertEqual(report["agent"]["message_count"], 2)
++            self.assertTrue((Path(tmp) / "trajectories" / f"task-{run_dir.name}.traj.json").exists())
++            imported = latest_trajectory_sample(run_dir)
++            self.assertIn(run_dir.name, imported["source_path"])
++
++    def test_run_imports_detected_absolute_output_path(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            child_script = write_fake_mini_swe_child(Path(tmp))
++            output_path = str(Path(tmp) / "fixed-output.traj.json")
++            result, run_dir = run_agentmon_fake_child(
++                tmp,
++                [
++                    sys.executable,
++                    str(child_script),
++                    f"--output={output_path}",
++                ],
++            )
++
++            self.assertEqual(result.returncode, 0, result.stderr)
++            report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
++            self.assertEqual(report["agent"]["status"], "complete")
++            self.assertEqual(latest_trajectory_sample(run_dir)["source_path"], output_path)
++
++    def test_run_marks_detected_missing_trajectory_without_failing_child(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            child_script = write_fake_mini_swe_child(Path(tmp))
++            missing_path = str(Path(tmp) / "missing.traj.json")
++            env = os.environ.copy()
++            env["WRITE_TRAJ"] = "0"
++            result, run_dir = run_agentmon_fake_child(
++                tmp,
++                [
++                    sys.executable,
++                    str(child_script),
++                    "-o",
++                    missing_path,
++                ],
++                env=env,
++            )
++
++            self.assertEqual(result.returncode, 0, result.stderr)
++            manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
++            report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
++            self.assertEqual(manifest["data_quality"]["trajectory"], "missing")
++            self.assertEqual(report["agent"]["status"], "missing")
++            events = [
++                json.loads(line)
++                for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
++            ]
++            trajectory_errors = [
++                event
++                for event in events
++                if event["source"] == "trajectory" and event["event_type"] == "error"
++            ]
++            self.assertEqual(trajectory_errors[-1]["payload"]["status"], "missing")
++            self.assertEqual(trajectory_errors[-1]["payload"]["path"], missing_path)
++
++    def test_run_reports_p1_spans_and_imported_trajectory_together(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            child_script = write_fake_mini_swe_child(Path(tmp))
++            output_path = str(Path(tmp) / "with-p1.traj.json")
++            env = os.environ.copy()
++            env["WRITE_P1"] = "1"
++            result, run_dir = run_agentmon_fake_child(
++                tmp,
++                [
++                    sys.executable,
++                    str(child_script),
++                    "--output",
++                    output_path,
++                ],
++                env=env,
++            )
++
++            self.assertEqual(result.returncode, 0, result.stderr)
++            report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
++            self.assertNotEqual(report["agent"]["status"], "missing")
++            self.assertEqual(report["p1_spans"]["status"], "complete")
++            self.assertEqual(report["p1_spans"]["agent_steps"], 1)
++
++
++def run_agentmon_fake_child(
++    tmp: str,
++    child_argv: list[str],
++    *,
++    env: dict[str, str] | None = None,
++) -> tuple[subprocess.CompletedProcess[str], Path]:
++    config_path = write_fast_config(Path(tmp))
++    run_env = env or os.environ.copy()
++    run_env["PYTHONPATH"] = str(ROOT / "src")
++    result = subprocess.run(
++        [
++            sys.executable,
++            "-m",
++            "agentmon",
++            "run",
++            "--config",
++            str(config_path),
++            "--",
++            *child_argv,
++        ],
++        cwd=ROOT,
++        env=run_env,
++        text=True,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        timeout=30,
++        check=False,
++    )
++    runs_root = Path(tmp) / "runs"
++    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
++    if len(run_dirs) != 1:
++        raise AssertionError(f"expected one run dir, got {run_dirs}; stderr={result.stderr}")
++    return result, run_dirs[0]
++
++
++def write_fast_config(tmp: Path) -> Path:
++    config_path = tmp / "agentmon-test.toml"
++    config_path.write_text(
++        f"""
++[general]
++output_root = "{tmp / "runs"}"
++
++[agent]
++env_unset = ["PYTHONPATH", "PYTHONHOME"]
++env_set = [
++  "PYTHONPATH={ROOT / "src"}",
++  "PYTHONNOUSERSITE=1",
++  "NO_PROXY=127.0.0.1,localhost,::1",
++  "no_proxy=127.0.0.1,localhost,::1",
++]
++
++[vllm]
++metrics_url = "http://127.0.0.1:1/metrics"
++api_base = "http://127.0.0.1:1/v1"
++models_url = "http://127.0.0.1:1/v1/models"
++request_timeout_seconds = 0.05
++
++[ascend]
++npu_smi = "{tmp / "missing-npu-smi"}"
++command_timeout_seconds = 0.05
++""".strip(),
++        encoding="utf-8",
++    )
++    return config_path
++
++
++def write_fake_mini_swe_child(tmp: Path) -> Path:
++    script = tmp / "fake_mini_swe_child.py"
++    script.write_text(
++        textwrap.dedent(
++            """
++            import json
++            import os
++            import sys
++            import time
++            from pathlib import Path
++
++
++            def output_path(argv):
++                index = 0
++                while index < len(argv):
++                    item = argv[index]
++                    if item in {"-o", "--output"} and index + 1 < len(argv):
++                        return argv[index + 1]
++                    if item.startswith("--output="):
++                        return item.split("=", 1)[1]
++                    index += 1
++                return None
++
++
++            path = output_path(sys.argv[1:])
++            if os.environ.get("WRITE_TRAJ", "1") != "0" and path:
++                target = Path(path)
++                target.parent.mkdir(parents=True, exist_ok=True)
++                target.write_text(
++                    json.dumps(
++                        {
++                            "trajectory_format": "mini-swe-test",
++                            "info": {
++                                "mini_version": "2.4.3",
++                                "exit_status": "submitted",
++                                "model_stats": {"api_calls": 1, "instance_cost": 0.25},
++                            },
++                            "messages": [
++                                {"role": "user", "content": "task"},
++                                {
++                                    "role": "assistant",
++                                    "content": "answer",
++                                    "tool_calls": [{"name": "bash"}],
++                                    "extra": {
++                                        "usage": {
++                                            "prompt_tokens": 10,
++                                            "completion_tokens": 3,
++                                            "cached_tokens": 2,
++                                        }
++                                    },
++                                },
++                            ],
++                        }
++                    ),
++                    encoding="utf-8",
++                )
++
++            if os.environ.get("WRITE_P1") == "1":
++                from agentmon.events import Event
++                from agentmon.storage.jsonl import JsonlWriter
++
++                writer = JsonlWriter(os.environ["AGENTMON_EVENTS_PATH"])
++                try:
++                    writer.write_event(
++                        Event(
++                            run_id=os.environ["AGENTMON_RUN_ID"],
++                            source="mini_swe",
++                            event_type="agent_step.start",
++                            quality="exact",
++                            payload={
++                                "span_id": "agent-step-1",
++                                "span_type": "agent_step",
++                                "start_mono_ns": time.monotonic_ns(),
++                            },
++                        )
++                    )
++                    writer.write_event(
++                        Event(
++                            run_id=os.environ["AGENTMON_RUN_ID"],
++                            source="mini_swe",
++                            event_type="agent_step.end",
++                            quality="exact",
++                            payload={
++                                "span_id": "agent-step-1",
++                                "span_type": "agent_step",
++                                "status": "success",
++                                "duration_ns": 1,
++                                "end_mono_ns": time.monotonic_ns(),
++                            },
++                        )
++                    )
++                finally:
++                    writer.close()
++            """
++        ),
++        encoding="utf-8",
++    )
++    return script
++
++
++def latest_trajectory_sample(run_dir: Path) -> dict[str, object]:
++    events = [
++        json.loads(line)
++        for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
++    ]
++    samples = [
++        event["payload"]
++        for event in events
++        if event["source"] == "trajectory" and event["event_type"] == "sample"
++    ]
++    if not samples:
++        raise AssertionError("no trajectory sample event found")
++    return samples[-1]

@@ -1,0 +1,20 @@
+{
+  "version": "2.0.1",
+  "experiment": {"split": "predefined", "zero_baseline_degradation_policy": "error"},
+  "output_dir": "outputs/b5_example",
+  "methods": [
+    {"name": "no_correction"},
+    {"name": "shared_residual_oracle"},
+    {"name": "pair_lowrank_oracle", "ranks": [1, 2, 4, 8, 16]},
+    {"name": "frozen_lowrank_oracle", "ranks": [1, 2, 4, 8, 16]},
+    {"name": "probe_mean", "probes": [1, 2, 4, 8]},
+    {"name": "probe_frozen_basis", "ranks": [1, 2, 4, 8, 16], "probes": [1, 2, 4, 8]},
+    {"name": "anchor_residual", "k": [1, 2, 4, 8], "weighting": "inverse_distance"},
+    {"name": "random_expected", "budgets": [0.01, 0.05, 0.10, 0.20]},
+    {"name": "boundary_first", "budgets": [0.01, 0.05, 0.10, 0.20]},
+    {"name": "joint_unit_oracle", "budgets": [0.01, 0.05, 0.10, 0.20]},
+    {"name": "static_layer", "budgets": [0.01, 0.05, 0.10, 0.20], "granularities": ["neutral_partial", "group_atomic"]},
+    {"name": "static_position", "budgets": [0.01, 0.05, 0.10, 0.20], "granularities": ["neutral_partial", "group_atomic"], "position_binner": {"type": "fixed_edges", "edges": [0,16,32,64,128,256,512,1024,"inf"]}},
+    {"name": "static_joint", "budgets": [0.01, 0.05, 0.10, 0.20], "granularity": "neutral_partial", "position_binner": {"type": "normalized_depth", "bin_count": 16}}
+  ]
+}

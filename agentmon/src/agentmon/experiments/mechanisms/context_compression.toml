@@ -1,0 +1,38 @@
+name = "context_compression"
+description = "Agent-adapter context compression before model requests."
+
+allowed_execution_paths = [
+  "agent_adapter_context_compression",
+  "runtime_controlled_model",
+]
+
+allowed_config_differences = [
+  "runtime_optimization.enabled",
+  "context_compression.*",
+]
+
+activation_event_types = [
+  "context_compression.decision",
+]
+
+negative_reason_paths = [
+  "payload.context_compression_status",
+]
+
+negative_reasons = [
+  "DISABLED",
+  "ERROR_BYPASS",
+]
+
+forbidden_conclusions = [
+  "context compression activation does not prove semantic equivalence.",
+  "estimated token reductions are not exact tokenizer results unless measurement quality proves it.",
+]
+
+[required_config]
+"runtime_optimization.enabled" = true
+"context_compression.enabled" = true
+
+[coverage]
+min_count = 1
+min_ratio = 0.95

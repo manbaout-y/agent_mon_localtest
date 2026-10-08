@@ -1,0 +1,8 @@
+{
+  "archive_existing_equal": 576,
+  "archive_existing_different": [
+    "agentmon/artifacts/patches/agentmon-target-device-token-attribution-fix-20260703-v3.patch"
+  ],
+  "non_utf8_text_count": 0,
+  "non_utf8_text_paths": []
+}

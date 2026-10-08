@@ -1,0 +1,40 @@
+name: model_gate
+description: Runtime-side model request gate for model-provider inflight admission.
+
+allowed_execution_paths:
+  - runtime_controlled_model
+  - model_gate_proxy
+  - runtime_service
+
+allowed_config_differences:
+  - runtime_optimization.enabled
+  - control.enabled
+  - control.mode
+  - model_gate.*
+
+activation_event_types:
+  - control.model_gate.acquire
+  - control.model_provider.completed
+  - control.model_provider.rejected
+  - control.model_provider.error
+
+negative_reason_paths:
+  - payload.reason
+  - payload.lease.reason
+
+negative_reasons:
+  - gate_disabled
+  - control or model gate disabled
+  - runtime optimization disabled
+
+forbidden_conclusions:
+  - enabled=true does not prove real model traffic used the gate.
+  - model gate activation does not prove TTFT or task success improvement.
+
+required_config:
+  runtime_optimization.enabled: true
+  control.enabled: true
+  model_gate.enabled: true
+
+coverage:
+  min_count: 1

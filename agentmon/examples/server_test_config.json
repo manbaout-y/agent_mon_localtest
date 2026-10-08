@@ -1,0 +1,54 @@
+{
+  "actions": [
+    "self_check"
+  ],
+  "report_dir": "",
+  "self_check": {
+    "run_unit_tests": false
+  },
+  "offline_analysis": {
+    "input_path": "",
+    "output_path": "",
+    "profile": "auto",
+    "output_format": "csv",
+    "jobs": 4,
+    "analysis_preflight": true,
+    "fast_smoke": false,
+    "skip_evidence": false,
+    "skip_handoff": false,
+    "skip_model_pack": false,
+    "experiment_contract": "",
+    "omit_normalized_tables": [
+      "event_inventory"
+    ],
+    "force": false,
+    "resume": true,
+    "fresh": false,
+    "strict": false,
+    "expected_runs": null,
+    "expected_request_attempts": null,
+    "expected_p2_requests": null,
+    "allow_baseline_mismatch": false,
+    "temp_dir": null,
+    "memory_limit_bytes": null,
+    "min_free_bytes": null,
+    "timeout_seconds": null
+  },
+  "preflight": {
+    "agentmon_python": "",
+    "mini_swe_python": "",
+    "vllm_python": "",
+    "agentmon_config": "",
+    "events_path": "",
+    "vllm_launch_command_file": "",
+    "expect_prefix_cache": "any",
+    "acl_python_paths": [],
+    "deep": true,
+    "strict": true,
+    "timeout_seconds": 60,
+    "require_runtime_p2": false,
+    "runtime_base_url": "",
+    "runtime_model": "",
+    "runtime_stream_probe": false
+  }
+}

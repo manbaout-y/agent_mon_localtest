@@ -1,0 +1,30 @@
+{
+  "actions": [
+    "self_check",
+    "offline_analysis"
+  ],
+  "report_dir": "",
+  "self_check": {
+    "run_unit_tests": false
+  },
+  "offline_analysis": {
+    "input_path": "",
+    "output_path": "",
+    "profile": "auto",
+    "output_format": "csv",
+    "jobs": 8,
+    "analysis_preflight": true,
+    "fast_smoke": true,
+    "skip_evidence": true,
+    "skip_handoff": true,
+    "skip_model_pack": true,
+    "experiment_contract": "",
+    "omit_normalized_tables": [
+      "event_inventory"
+    ],
+    "force": false,
+    "resume": true,
+    "strict": false,
+    "timeout_seconds": null
+  }
+}

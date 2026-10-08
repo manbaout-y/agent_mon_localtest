@@ -1,0 +1,2596 @@
+{
+  "snapshot": "agentmon_kvreuse_complete_20260923",
+  "created_at": "2026-09-24T01:46:12.202864+00:00",
+  "source_roots": {
+    "kv_ana": "/Users/yang/Desktop/project_acs/infra/kv_ana",
+    "agentmon": "/Users/yang/Desktop/project_acs/infra/load_monitor_optimizer_harness"
+  },
+  "source_kind": "current working trees, including uncommitted files; not a Git release",
+  "versions": {
+    "kvreuse_framework": "2.0.1",
+    "observability": "1.0.1",
+    "v41_joint_client": "v1",
+    "agentmon_package": "0.1.0"
+  },
+  "selections": {
+    "kv_ana": [
+      "src",
+      "scripts",
+      "tests",
+      "configs",
+      "manifests",
+      "references",
+      "docs",
+      "runtime_intervention",
+      "runtime_references",
+      "pyproject.toml",
+      "README.md",
+      "REAL_OFFLINE_PIPELINE.md",
+      "literature_fetch_pack_v3/literature/paper_specs"
+    ],
+    "agentmon": [
+      "src",
+      "scripts",
+      "tests",
+      "examples",
+      "docs",
+      "offline_ana",
+      "agentmon_implementation_spec",
+      "artifacts/README.md",
+      "artifacts/patches",
+      "pyproject.toml",
+      "README.md"
+    ]
+  },
+  "excluded": [
+    "downloaded PDFs/full third-party repos",
+    "raw tensors/models",
+    "environments/dependency wheels",
+    "outputs/reports",
+    "old package snapshots",
+    "Git metadata/caches/symlinks"
+  ],
+  "cautions": [
+    "V4 historical patches are NOT V4.1 patches",
+    "Client wire validation is NOT runtime capture or real model validation"
+  ],
+  "files": [
+    {
+      "path": "agentmon/README.md",
+      "bytes": 51397
+    },
+    {
+      "path": "agentmon/agentmon_implementation_spec/AGENTMON_TECHNICAL_SPEC_ZH.md",
+      "bytes": 58965
+    },
+    {
+      "path": "agentmon/agentmon_implementation_spec/CODEX_MASTER_PROMPT_ZH.md",
+      "bytes": 1701
+    },
+    {
+      "path": "agentmon/agentmon_implementation_spec/README.md",
+      "bytes": 423
+    },
+    {
+      "path": "agentmon/agentmon_implementation_spec/config.target.toml",
+      "bytes": 1809
+    },
+    {
+      "path": "agentmon/artifacts/README.md",
+      "bytes": 1903
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-batch-p2-step-sequence-from-v3-20260707.patch",
+      "bytes": 88857
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p1-environment-result-fix.patch",
+      "bytes": 5028
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p1-environment-result-fix.patch.sha256",
+      "bytes": 127
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p1-summary-aggregate-latest-20260702.patch",
+      "bytes": 68634
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p1-summary-aggregate-latest-20260702.patch.sha256",
+      "bytes": 169
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p1-unit-test-fix.patch",
+      "bytes": 4817
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p1-unit-test-fix.patch.sha256",
+      "bytes": 98
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p2-async-llm-real-target-fix.patch",
+      "bytes": 7924
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p2-async-llm-real-target-fix.patch.sha256",
+      "bytes": 110
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p2-full-from-p1-baseline-20260702.patch",
+      "bytes": 191163
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p2-full-from-p1-baseline-20260702.patch.sha256",
+      "bytes": 115
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p2-request-id-correlation-fix-20260703.patch",
+      "bytes": 17900
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-p2-request-id-correlation-fix-20260703.patch.sha256",
+      "bytes": 120
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-performance-data-quality-fix-20260703.patch",
+      "bytes": 26495
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-performance-visibility-trajectory-fix-20260703.patch",
+      "bytes": 33849
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-performance-visibility-trajectory-fix-20260703.patch.sha256",
+      "bytes": 128
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-target-device-token-attribution-fix-20260703-v2.patch",
+      "bytes": 66988
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-target-device-token-attribution-fix-20260703-v3.patch",
+      "bytes": 86031
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-target-device-token-attribution-fix-20260703-v3.patch.sha256",
+      "bytes": 180
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-target-device-token-attribution-fix-20260703.patch",
+      "bytes": 66985
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-thin-baseline-batch-p2-step-sequence-20260708-v2.patch",
+      "bytes": 77168
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-thin-baseline-batch-p2-step-sequence-20260708-v3.patch",
+      "bytes": 77231
+    },
+    {
+      "path": "agentmon/artifacts/patches/agentmon-thin-baseline-batch-p2-step-sequence-20260708.patch",
+      "bytes": 83553
+    },
+    {
+      "path": "agentmon/docs/DEEPSEEK_V41_JOINT_CLIENT.md",
+      "bytes": 5459
+    },
+    {
+      "path": "agentmon/docs/adding_new_profile.md",
+      "bytes": 962
+    },
+    {
+      "path": "agentmon/docs/agent_runtime_architecture_design_zh.md",
+      "bytes": 39643
+    },
+    {
+      "path": "agentmon/docs/agent_runtime_full_usage_zh.md",
+      "bytes": 32300
+    },
+    {
+      "path": "agentmon/docs/agentmon_metrics_catalog_zh.md",
+      "bytes": 22621
+    },
+    {
+      "path": "agentmon/docs/agentmon_project_handoff_and_server_usage_zh.md",
+      "bytes": 63269
+    },
+    {
+      "path": "agentmon/docs/analysis_failure_diagnosis.md",
+      "bytes": 1013
+    },
+    {
+      "path": "agentmon/docs/analysis_replay_structural_refactor_design_zh.md",
+      "bytes": 23074
+    },
+    {
+      "path": "agentmon/docs/analysis_schema.md",
+      "bytes": 2827
+    },
+    {
+      "path": "agentmon/docs/analysis_sop.md",
+      "bytes": 15499
+    },
+    {
+      "path": "agentmon/docs/batch_p2_step_sequence_usage.md",
+      "bytes": 23183
+    },
+    {
+      "path": "agentmon/docs/existing_data_offline_analysis_zh.md",
+      "bytes": 7191
+    },
+    {
+      "path": "agentmon/docs/experiment_intent_to_contract_zh.md",
+      "bytes": 8105
+    },
+    {
+      "path": "agentmon/docs/experiment_orchestration_zh.md",
+      "bytes": 11760
+    },
+    {
+      "path": "agentmon/docs/metric_dictionary.md",
+      "bytes": 1778
+    },
+    {
+      "path": "agentmon/docs/model_pack_contract.md",
+      "bytes": 2270
+    },
+    {
+      "path": "agentmon/docs/optimizer_experiment_harness_research_line_handoff_zh.md",
+      "bytes": 18812
+    },
+    {
+      "path": "agentmon/docs/p1_mini_swe_adapter.md",
+      "bytes": 11887
+    },
+    {
+      "path": "agentmon/docs/p2_deep_agent_workload_zh.md",
+      "bytes": 6588
+    },
+    {
+      "path": "agentmon/docs/p2_vllm_adapter.md",
+      "bytes": 44078
+    },
+    {
+      "path": "agentmon/docs/report_validation.md",
+      "bytes": 802
+    },
+    {
+      "path": "agentmon/docs/runtime_speed_optimization_algorithms_zh.md",
+      "bytes": 30849
+    },
+    {
+      "path": "agentmon/docs/server_release_smoke_zh.md",
+      "bytes": 35550
+    },
+    {
+      "path": "agentmon/docs/server_test_from_package_no_cli_zh.md",
+      "bytes": 25840
+    },
+    {
+      "path": "agentmon/docs/step_csv_analyzer_usage.md",
+      "bytes": 5172
+    },
+    {
+      "path": "agentmon/docs/troubleshooting.md",
+      "bytes": 3888
+    },
+    {
+      "path": "agentmon/examples/config.deepseek_v41.toml",
+      "bytes": 1307
+    },
+    {
+      "path": "agentmon/examples/config.target.toml",
+      "bytes": 2516
+    },
+    {
+      "path": "agentmon/examples/experiment_requests/qwen3_2card_agent_smoke.json",
+      "bytes": 980
+    },
+    {
+      "path": "agentmon/examples/models/deepseek_v41_registry.json",
+      "bytes": 240
+    },
+    {
+      "path": "agentmon/examples/models/local_deepseek_v41.yaml",
+      "bytes": 580
+    },
+    {
+      "path": "agentmon/examples/server_profiles/chenyang_ascend910b.json",
+      "bytes": 2402
+    },
+    {
+      "path": "agentmon/examples/server_test_config.json",
+      "bytes": 1248
+    },
+    {
+      "path": "agentmon/examples/server_test_config_chenyang_ascend910b.json",
+      "bytes": 841
+    },
+    {
+      "path": "agentmon/examples/server_test_config_fast_smoke.json",
+      "bytes": 596
+    },
+    {
+      "path": "agentmon/offline_ana/README.md",
+      "bytes": 6323
+    },
+    {
+      "path": "agentmon/offline_ana/lifemem_kv_reuse_analysis.py",
+      "bytes": 61860
+    },
+    {
+      "path": "agentmon/offline_ana/test_lifemem_kv_reuse_analysis.py",
+      "bytes": 10788
+    },
+    {
+      "path": "agentmon/pyproject.toml",
+      "bytes": 801
+    },
+    {
+      "path": "agentmon/scripts/agentmon_analyze_steps.py",
+      "bytes": 442
+    },
+    {
+      "path": "agentmon/scripts/agentmon_batch_runtime.py",
+      "bytes": 2539
+    },
+    {
+      "path": "agentmon/scripts/agentmon_compare_batches.py",
+      "bytes": 12913
+    },
+    {
+      "path": "agentmon/scripts/agentmon_existing_data_analysis.py",
+      "bytes": 447
+    },
+    {
+      "path": "agentmon/scripts/agentmon_experiment.py",
+      "bytes": 451
+    },
+    {
+      "path": "agentmon/scripts/agentmon_experiment_init.py",
+      "bytes": 444
+    },
+    {
+      "path": "agentmon/scripts/agentmon_experiment_orchestrator.py",
+      "bytes": 450
+    },
+    {
+      "path": "agentmon/scripts/agentmon_optimizer_experiment.py",
+      "bytes": 451
+    },
+    {
+      "path": "agentmon/scripts/agentmon_optimizer_qualification.py",
+      "bytes": 9803
+    },
+    {
+      "path": "agentmon/scripts/agentmon_p1_smoke_check.py",
+      "bytes": 12234
+    },
+    {
+      "path": "agentmon/scripts/agentmon_p2_discovery.py",
+      "bytes": 24692
+    },
+    {
+      "path": "agentmon/scripts/agentmon_perf_summary.py",
+      "bytes": 16076
+    },
+    {
+      "path": "agentmon/scripts/agentmon_release_gate.py",
+      "bytes": 41769
+    },
+    {
+      "path": "agentmon/scripts/agentmon_server_preflight.py",
+      "bytes": 446
+    },
+    {
+      "path": "agentmon/scripts/agentmon_server_quick_smoke.py",
+      "bytes": 448
+    },
+    {
+      "path": "agentmon/scripts/agentmon_step_sequence.py",
+      "bytes": 1966
+    },
+    {
+      "path": "agentmon/scripts/deepseek_v41_client_smoke.py",
+      "bytes": 7263
+    },
+    {
+      "path": "agentmon/scripts/package_agentmon_source.py",
+      "bytes": 11696
+    },
+    {
+      "path": "agentmon/scripts/run_agentmon_analysis_from_path.py",
+      "bytes": 4768
+    },
+    {
+      "path": "agentmon/scripts/run_agentmon_test_from_config.py",
+      "bytes": 20523
+    },
+    {
+      "path": "agentmon/src/agentmon/__init__.py",
+      "bytes": 52
+    },
+    {
+      "path": "agentmon/src/agentmon/__main__.py",
+      "bytes": 80
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/__init__.py",
+      "bytes": 167
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/__init__.py",
+      "bytes": 35
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/__init__.py",
+      "bytes": 1309
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/adapter.py",
+      "bytes": 5808
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/agent.py",
+      "bytes": 12165
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/context.py",
+      "bytes": 1856
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/context_compression.py",
+      "bytes": 4398
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/environment.py",
+      "bytes": 28152
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/event_sink.py",
+      "bytes": 8553
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/ids.py",
+      "bytes": 321
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/model.py",
+      "bytes": 27651
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/profiled_model.py",
+      "bytes": 999
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/runtime_control.py",
+      "bytes": 3270
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/agent_frameworks/mini_swe/workload.py",
+      "bytes": 16099
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/__init__.py",
+      "bytes": 35
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/__init__.py",
+      "bytes": 1581
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/adapter.py",
+      "bytes": 2569
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/events.py",
+      "bytes": 20898
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/hook.py",
+      "bytes": 102633
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/hook_config.py",
+      "bytes": 1833
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/importer.py",
+      "bytes": 4579
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/kv.py",
+      "bytes": 2208
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/moe.py",
+      "bytes": 13850
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/p2_index.py",
+      "bytes": 36876
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/inference/vllm_018/version.py",
+      "bytes": 6290
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/__init__.py",
+      "bytes": 108
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/adapter.py",
+      "bytes": 177
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/agent.py",
+      "bytes": 175
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/context.py",
+      "bytes": 177
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/context_compression.py",
+      "bytes": 195
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/environment.py",
+      "bytes": 181
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/event_sink.py",
+      "bytes": 180
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/ids.py",
+      "bytes": 173
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/model.py",
+      "bytes": 175
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/runtime_control.py",
+      "bytes": 185
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/mini_swe/workload.py",
+      "bytes": 178
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/registry.py",
+      "bytes": 2814
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/vllm_018/__init__.py",
+      "bytes": 101
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/vllm_018/events.py",
+      "bytes": 169
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/vllm_018/hook.py",
+      "bytes": 167
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/vllm_018/kv.py",
+      "bytes": 165
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/vllm_018/p2_index.py",
+      "bytes": 171
+    },
+    {
+      "path": "agentmon/src/agentmon/adapters/vllm_018/version.py",
+      "bytes": 170
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/__init__.py",
+      "bytes": 471
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/analyzers.py",
+      "bytes": 77319
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/artifacts.py",
+      "bytes": 8818
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/batch_compare.py",
+      "bytes": 8798
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/claims.py",
+      "bytes": 7881
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/cli.py",
+      "bytes": 19202
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/compare.py",
+      "bytes": 8507
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/config.py",
+      "bytes": 7973
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/contract.py",
+      "bytes": 13114
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/discovery.py",
+      "bytes": 29117
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/domain_profiles/__init__.py",
+      "bytes": 158
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/domain_profiles/agentmon.py",
+      "bytes": 3197
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/evidence.py",
+      "bytes": 11737
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/execution.py",
+      "bytes": 26488
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/existing_data.py",
+      "bytes": 134858
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/failure_diagnosis.py",
+      "bytes": 5448
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/handoff.py",
+      "bytes": 16729
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/intervals.py",
+      "bytes": 686
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/inventory.py",
+      "bytes": 9818
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/io.py",
+      "bytes": 13392
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/model_pack.py",
+      "bytes": 15290
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/normalize.py",
+      "bytes": 81600
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/p2_index.py",
+      "bytes": 26270
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/pipeline.py",
+      "bytes": 66772
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/preflight.py",
+      "bytes": 11332
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/profiles.py",
+      "bytes": 6523
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/profiles/default.yaml",
+      "bytes": 439
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/profiles/legacy_compat.yaml",
+      "bytes": 229
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/prometheus.py",
+      "bytes": 4835
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/report_validation.py",
+      "bytes": 14845
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/resume.py",
+      "bytes": 9181
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/schemas.py",
+      "bytes": 5028
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/schemas/agentmon_default.yaml",
+      "bytes": 18702
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/schemas/agentmon_v4.yaml",
+      "bytes": 967
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/schemas/trajectory_default.yaml",
+      "bytes": 875
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/schemas/vllm_0_18.yaml",
+      "bytes": 3681
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/schemas/vllm_default.yaml",
+      "bytes": 912
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/semantics.py",
+      "bytes": 7448
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/stages.py",
+      "bytes": 5058
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/statistics.py",
+      "bytes": 5188
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/step_csv.py",
+      "bytes": 62233
+    },
+    {
+      "path": "agentmon/src/agentmon/analysis/validators.py",
+      "bytes": 32263
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/__init__.py",
+      "bytes": 339
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/analysis_runner.py",
+      "bytes": 27682
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/artifacts.py",
+      "bytes": 17247
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/commands.py",
+      "bytes": 2912
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/constants.py",
+      "bytes": 88
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/io.py",
+      "bytes": 3638
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/manifest.py",
+      "bytes": 16280
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/metrics.py",
+      "bytes": 3998
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/policy.py",
+      "bytes": 1800
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/resources.py",
+      "bytes": 6139
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/runtime.py",
+      "bytes": 52159
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/safety.py",
+      "bytes": 15550
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/summary.py",
+      "bytes": 14932
+    },
+    {
+      "path": "agentmon/src/agentmon/batch/workload.py",
+      "bytes": 10925
+    },
+    {
+      "path": "agentmon/src/agentmon/capabilities.py",
+      "bytes": 341
+    },
+    {
+      "path": "agentmon/src/agentmon/cli.py",
+      "bytes": 70090
+    },
+    {
+      "path": "agentmon/src/agentmon/clock.py",
+      "bytes": 1457
+    },
+    {
+      "path": "agentmon/src/agentmon/config.py",
+      "bytes": 26931
+    },
+    {
+      "path": "agentmon/src/agentmon/context_compression/__init__.py",
+      "bytes": 1312
+    },
+    {
+      "path": "agentmon/src/agentmon/context_compression/registry.py",
+      "bytes": 4659
+    },
+    {
+      "path": "agentmon/src/agentmon/context_compression/service.py",
+      "bytes": 13287
+    },
+    {
+      "path": "agentmon/src/agentmon/context_compression/strategies.py",
+      "bytes": 14694
+    },
+    {
+      "path": "agentmon/src/agentmon/context_compression/types.py",
+      "bytes": 7368
+    },
+    {
+      "path": "agentmon/src/agentmon/contracts/__init__.py",
+      "bytes": 736
+    },
+    {
+      "path": "agentmon/src/agentmon/contracts/adapters.py",
+      "bytes": 2118
+    },
+    {
+      "path": "agentmon/src/agentmon/contracts/runtime.py",
+      "bytes": 1000
+    },
+    {
+      "path": "agentmon/src/agentmon/contracts/telemetry.py",
+      "bytes": 1485
+    },
+    {
+      "path": "agentmon/src/agentmon/control/__init__.py",
+      "bytes": 785
+    },
+    {
+      "path": "agentmon/src/agentmon/control/model_gate.py",
+      "bytes": 5583
+    },
+    {
+      "path": "agentmon/src/agentmon/control/model_provider.py",
+      "bytes": 5038
+    },
+    {
+      "path": "agentmon/src/agentmon/control/resource_actuator.py",
+      "bytes": 3717
+    },
+    {
+      "path": "agentmon/src/agentmon/control/tool_executor.py",
+      "bytes": 5947
+    },
+    {
+      "path": "agentmon/src/agentmon/control/tool_pool.py",
+      "bytes": 7281
+    },
+    {
+      "path": "agentmon/src/agentmon/doctor.py",
+      "bytes": 19033
+    },
+    {
+      "path": "agentmon/src/agentmon/events.py",
+      "bytes": 2982
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/__init__.py",
+      "bytes": 1804
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/evaluation.py",
+      "bytes": 37290
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/evidence.py",
+      "bytes": 38891
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/experiment_cli.py",
+      "bytes": 8320
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/golden.py",
+      "bytes": 4248
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/graph.py",
+      "bytes": 245
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/matrix.py",
+      "bytes": 6335
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/__init__.py",
+      "bytes": 212
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/context_compression.toml",
+      "bytes": 827
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/context_compression.yaml",
+      "bytes": 779
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/model_gate.toml",
+      "bytes": 1004
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/model_gate.yaml",
+      "bytes": 946
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/prefix_cache.toml",
+      "bytes": 776
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/prefix_cache.yaml",
+      "bytes": 725
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/registry.py",
+      "bytes": 5347
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/scheduler.toml",
+      "bytes": 752
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/scheduler.yaml",
+      "bytes": 703
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/tool_pool.toml",
+      "bytes": 965
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/mechanisms/tool_pool.yaml",
+      "bytes": 908
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/orchestration.py",
+      "bytes": 36162
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/prediction.py",
+      "bytes": 6687
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/prefix_cache.py",
+      "bytes": 6935
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/preflight.py",
+      "bytes": 4813
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/replay.py",
+      "bytes": 35700
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/reports.py",
+      "bytes": 4131
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/request.py",
+      "bytes": 14784
+    },
+    {
+      "path": "agentmon/src/agentmon/experiments/snapshots.py",
+      "bytes": 41616
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/__init__.py",
+      "bytes": 816
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/harness/__init__.py",
+      "bytes": 529
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/harness/audit.py",
+      "bytes": 4061
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/harness/cli.py",
+      "bytes": 4497
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/harness/runner.py",
+      "bytes": 24250
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/harness/schemas.py",
+      "bytes": 6325
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/registry.py",
+      "bytes": 1676
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/service.py",
+      "bytes": 4303
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/strategies.py",
+      "bytes": 8297
+    },
+    {
+      "path": "agentmon/src/agentmon/optimizer/types.py",
+      "bytes": 3134
+    },
+    {
+      "path": "agentmon/src/agentmon/paths.py",
+      "bytes": 1812
+    },
+    {
+      "path": "agentmon/src/agentmon/pipeline/__init__.py",
+      "bytes": 570
+    },
+    {
+      "path": "agentmon/src/agentmon/pipeline/executor.py",
+      "bytes": 13001
+    },
+    {
+      "path": "agentmon/src/agentmon/pipeline/identity.py",
+      "bytes": 5653
+    },
+    {
+      "path": "agentmon/src/agentmon/pipeline/model.py",
+      "bytes": 2896
+    },
+    {
+      "path": "agentmon/src/agentmon/profile_data.py",
+      "bytes": 833
+    },
+    {
+      "path": "agentmon/src/agentmon/py.typed",
+      "bytes": 1
+    },
+    {
+      "path": "agentmon/src/agentmon/replay/__init__.py",
+      "bytes": 214
+    },
+    {
+      "path": "agentmon/src/agentmon/replay/simulator.py",
+      "bytes": 6809
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/__init__.py",
+      "bytes": 1
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/_legacy_report.py",
+      "bytes": 126879
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/ascend.py",
+      "bytes": 9719
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/builder.py",
+      "bytes": 357
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/canonical.py",
+      "bytes": 38585
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/event_log.py",
+      "bytes": 2214
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/p1.py",
+      "bytes": 465
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/p2.py",
+      "bytes": 715
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/quality.py",
+      "bytes": 285
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/report.py",
+      "bytes": 2260
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/report_builder.py",
+      "bytes": 4697
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/summary.py",
+      "bytes": 53074
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/timeline.py",
+      "bytes": 27586
+    },
+    {
+      "path": "agentmon/src/agentmon/reporting/writers.py",
+      "bytes": 263
+    },
+    {
+      "path": "agentmon/src/agentmon/run_controller.py",
+      "bytes": 32311
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/__init__.py",
+      "bytes": 1148
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/audit.py",
+      "bytes": 1142
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/backend.py",
+      "bytes": 619
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/backends/__init__.py",
+      "bytes": 102
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/backends/process.py",
+      "bytes": 6100
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/core.py",
+      "bytes": 13563
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/p2_import.py",
+      "bytes": 18519
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/phases.py",
+      "bytes": 7371
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/queue.py",
+      "bytes": 13142
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/task_state.py",
+      "bytes": 26566
+    },
+    {
+      "path": "agentmon/src/agentmon/runtime/types.py",
+      "bytes": 8668
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/__init__.py",
+      "bytes": 128
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/ascend_smi.py",
+      "bytes": 10805
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/base.py",
+      "bytes": 2555
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/host.py",
+      "bytes": 7480
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/npu_mapping.py",
+      "bytes": 11747
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/procfs.py",
+      "bytes": 9035
+    },
+    {
+      "path": "agentmon/src/agentmon/sampling/vllm_metrics.py",
+      "bytes": 4102
+    },
+    {
+      "path": "agentmon/src/agentmon/scheduler/__init__.py",
+      "bytes": 569
+    },
+    {
+      "path": "agentmon/src/agentmon/scheduler/registry.py",
+      "bytes": 1398
+    },
+    {
+      "path": "agentmon/src/agentmon/scheduler/service.py",
+      "bytes": 14052
+    },
+    {
+      "path": "agentmon/src/agentmon/scheduler/types.py",
+      "bytes": 780
+    },
+    {
+      "path": "agentmon/src/agentmon/script_compat.py",
+      "bytes": 2670
+    },
+    {
+      "path": "agentmon/src/agentmon/security.py",
+      "bytes": 1762
+    },
+    {
+      "path": "agentmon/src/agentmon/server/__init__.py",
+      "bytes": 53
+    },
+    {
+      "path": "agentmon/src/agentmon/server/preflight.py",
+      "bytes": 76060
+    },
+    {
+      "path": "agentmon/src/agentmon/server/quick_smoke.py",
+      "bytes": 60503
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/__init__.py",
+      "bytes": 354
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/constants.py",
+      "bytes": 2737
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/core.py",
+      "bytes": 53497
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/formatters.py",
+      "bytes": 32059
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/io.py",
+      "bytes": 1022
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/p2.py",
+      "bytes": 49095
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/resources.py",
+      "bytes": 20234
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/spans.py",
+      "bytes": 3673
+    },
+    {
+      "path": "agentmon/src/agentmon/step_sequence/utils.py",
+      "bytes": 6000
+    },
+    {
+      "path": "agentmon/src/agentmon/storage/__init__.py",
+      "bytes": 1
+    },
+    {
+      "path": "agentmon/src/agentmon/storage/event_queue.py",
+      "bytes": 7659
+    },
+    {
+      "path": "agentmon/src/agentmon/storage/jsonl.py",
+      "bytes": 1986
+    },
+    {
+      "path": "agentmon/src/agentmon/storage/sqlite.py",
+      "bytes": 2929
+    },
+    {
+      "path": "agentmon/src/agentmon/strategy.py",
+      "bytes": 2295
+    },
+    {
+      "path": "agentmon/src/agentmon/trajectory/__init__.py",
+      "bytes": 1
+    },
+    {
+      "path": "agentmon/src/agentmon/trajectory/mini_swe.py",
+      "bytes": 5684
+    },
+    {
+      "path": "agentmon/src/sitecustomize.py",
+      "bytes": 452
+    },
+    {
+      "path": "agentmon/tests/__init__.py",
+      "bytes": 162
+    },
+    {
+      "path": "agentmon/tests/integration/__init__.py",
+      "bytes": 1
+    },
+    {
+      "path": "agentmon/tests/integration/test_vllm_018_runtime_hook.py",
+      "bytes": 2630
+    },
+    {
+      "path": "agentmon/tests/unit/__init__.py",
+      "bytes": 162
+    },
+    {
+      "path": "agentmon/tests/unit/test_adapter_namespaces.py",
+      "bytes": 4640
+    },
+    {
+      "path": "agentmon/tests/unit/test_analysis_repair.py",
+      "bytes": 41797
+    },
+    {
+      "path": "agentmon/tests/unit/test_analysis_sop.py",
+      "bytes": 27602
+    },
+    {
+      "path": "agentmon/tests/unit/test_ascend_attribution.py",
+      "bytes": 4833
+    },
+    {
+      "path": "agentmon/tests/unit/test_ascend_smi.py",
+      "bytes": 2294
+    },
+    {
+      "path": "agentmon/tests/unit/test_batch_compare.py",
+      "bytes": 3474
+    },
+    {
+      "path": "agentmon/tests/unit/test_batch_runtime.py",
+      "bytes": 50182
+    },
+    {
+      "path": "agentmon/tests/unit/test_batch_safety.py",
+      "bytes": 8368
+    },
+    {
+      "path": "agentmon/tests/unit/test_canonical.py",
+      "bytes": 6880
+    },
+    {
+      "path": "agentmon/tests/unit/test_cli.py",
+      "bytes": 18377
+    },
+    {
+      "path": "agentmon/tests/unit/test_clock.py",
+      "bytes": 858
+    },
+    {
+      "path": "agentmon/tests/unit/test_config.py",
+      "bytes": 11121
+    },
+    {
+      "path": "agentmon/tests/unit/test_context_compression.py",
+      "bytes": 19161
+    },
+    {
+      "path": "agentmon/tests/unit/test_control.py",
+      "bytes": 14063
+    },
+    {
+      "path": "agentmon/tests/unit/test_events.py",
+      "bytes": 1845
+    },
+    {
+      "path": "agentmon/tests/unit/test_existing_data_analysis.py",
+      "bytes": 24225
+    },
+    {
+      "path": "agentmon/tests/unit/test_experiment_orchestration.py",
+      "bytes": 13059
+    },
+    {
+      "path": "agentmon/tests/unit/test_host_sampling.py",
+      "bytes": 1406
+    },
+    {
+      "path": "agentmon/tests/unit/test_intervals.py",
+      "bytes": 345
+    },
+    {
+      "path": "agentmon/tests/unit/test_jsonl.py",
+      "bytes": 3528
+    },
+    {
+      "path": "agentmon/tests/unit/test_matrix.py",
+      "bytes": 1226
+    },
+    {
+      "path": "agentmon/tests/unit/test_moe_routing.py",
+      "bytes": 7364
+    },
+    {
+      "path": "agentmon/tests/unit/test_optimizer.py",
+      "bytes": 5636
+    },
+    {
+      "path": "agentmon/tests/unit/test_optimizer_experiment_harness.py",
+      "bytes": 39379
+    },
+    {
+      "path": "agentmon/tests/unit/test_optimizer_qualification.py",
+      "bytes": 3026
+    },
+    {
+      "path": "agentmon/tests/unit/test_p1_adapters.py",
+      "bytes": 27960
+    },
+    {
+      "path": "agentmon/tests/unit/test_p2_discovery.py",
+      "bytes": 12266
+    },
+    {
+      "path": "agentmon/tests/unit/test_p2_vllm_adapter.py",
+      "bytes": 90505
+    },
+    {
+      "path": "agentmon/tests/unit/test_perf_summary.py",
+      "bytes": 11026
+    },
+    {
+      "path": "agentmon/tests/unit/test_pipeline.py",
+      "bytes": 3871
+    },
+    {
+      "path": "agentmon/tests/unit/test_prefix_cache_experiment.py",
+      "bytes": 3161
+    },
+    {
+      "path": "agentmon/tests/unit/test_procfs.py",
+      "bytes": 694
+    },
+    {
+      "path": "agentmon/tests/unit/test_project_audit_regressions.py",
+      "bytes": 23204
+    },
+    {
+      "path": "agentmon/tests/unit/test_prometheus.py",
+      "bytes": 840
+    },
+    {
+      "path": "agentmon/tests/unit/test_refactor_boundaries.py",
+      "bytes": 8004
+    },
+    {
+      "path": "agentmon/tests/unit/test_release_gate.py",
+      "bytes": 10646
+    },
+    {
+      "path": "agentmon/tests/unit/test_replay.py",
+      "bytes": 5786
+    },
+    {
+      "path": "agentmon/tests/unit/test_report_p1.py",
+      "bytes": 25894
+    },
+    {
+      "path": "agentmon/tests/unit/test_run_controller.py",
+      "bytes": 16553
+    },
+    {
+      "path": "agentmon/tests/unit/test_run_finalization.py",
+      "bytes": 14649
+    },
+    {
+      "path": "agentmon/tests/unit/test_runtime.py",
+      "bytes": 16907
+    },
+    {
+      "path": "agentmon/tests/unit/test_runtime_optimization_switch.py",
+      "bytes": 3486
+    },
+    {
+      "path": "agentmon/tests/unit/test_security.py",
+      "bytes": 381
+    },
+    {
+      "path": "agentmon/tests/unit/test_server_preflight.py",
+      "bytes": 37066
+    },
+    {
+      "path": "agentmon/tests/unit/test_server_quick_smoke.py",
+      "bytes": 11739
+    },
+    {
+      "path": "agentmon/tests/unit/test_server_test_config_runner.py",
+      "bytes": 5686
+    },
+    {
+      "path": "agentmon/tests/unit/test_smoke_check.py",
+      "bytes": 3568
+    },
+    {
+      "path": "agentmon/tests/unit/test_source_package.py",
+      "bytes": 4667
+    },
+    {
+      "path": "agentmon/tests/unit/test_step_csv_analyzer.py",
+      "bytes": 17959
+    },
+    {
+      "path": "agentmon/tests/unit/test_step_sequence.py",
+      "bytes": 39535
+    },
+    {
+      "path": "agentmon/tests/unit/test_strategy_registry.py",
+      "bytes": 5393
+    },
+    {
+      "path": "agentmon/tests/unit/test_summary.py",
+      "bytes": 12569
+    },
+    {
+      "path": "agentmon/tests/unit/test_task_state.py",
+      "bytes": 6105
+    },
+    {
+      "path": "agentmon/tests/unit/test_timeline.py",
+      "bytes": 6126
+    },
+    {
+      "path": "agentmon/tests/unit/test_v41_profile.py",
+      "bytes": 2509
+    },
+    {
+      "path": "agentmon/tests/unit/test_workload_aware_runtime.py",
+      "bytes": 4796
+    },
+    {
+      "path": "kv_ana/README.md",
+      "bytes": 2274
+    },
+    {
+      "path": "kv_ana/REAL_OFFLINE_PIPELINE.md",
+      "bytes": 4450
+    },
+    {
+      "path": "kv_ana/configs/b5_example.yaml",
+      "bytes": 1306
+    },
+    {
+      "path": "kv_ana/configs/real_offline_pipeline.yaml",
+      "bytes": 570
+    },
+    {
+      "path": "kv_ana/configs/state_research_offline.example.json",
+      "bytes": 383
+    },
+    {
+      "path": "kv_ana/configs/synthetic_smoke.yaml",
+      "bytes": 1291
+    },
+    {
+      "path": "kv_ana/docs/AGENTMON_KVREUSE_COMPLETE_GUIDE_ZH.md",
+      "bytes": 21926
+    },
+    {
+      "path": "kv_ana/docs/AGENTMON_V41_JOINT_ACCEPTANCE.md",
+      "bytes": 4238
+    },
+    {
+      "path": "kv_ana/docs/COMPLETE_SOURCE_BUNDLE_VALIDATION.md",
+      "bytes": 2362
+    },
+    {
+      "path": "kv_ana/docs/HETEROGENEOUS_STATE_BATCH1_PLAN.md",
+      "bytes": 4391
+    },
+    {
+      "path": "kv_ana/docs/KVREUSE_OBSERVABILITY_V1.md",
+      "bytes": 9731
+    },
+    {
+      "path": "kv_ana/docs/LIFEMEM_STATE_RESEARCH_V1.md",
+      "bytes": 12296
+    },
+    {
+      "path": "kv_ana/docs/STATE_RESEARCH_AUDIT_V1_0_1.md",
+      "bytes": 6909
+    },
+    {
+      "path": "kv_ana/docs/STATE_RESEARCH_BATCH1_VALIDATION.md",
+      "bytes": 3634
+    },
+    {
+      "path": "kv_ana/docs/STATE_RESEARCH_OFFLINE_PHASES_2_3.md",
+      "bytes": 14055
+    },
+    {
+      "path": "kv_ana/docs/STATE_RESEARCH_OFFLINE_VALIDATION.md",
+      "bytes": 5438
+    },
+    {
+      "path": "kv_ana/docs/V41_JOINT_VALIDATION.md",
+      "bytes": 3227
+    },
+    {
+      "path": "kv_ana/docs/algorithm_specs.md",
+      "bytes": 9341
+    },
+    {
+      "path": "kv_ana/docs/experiment_output_schema.md",
+      "bytes": 3665
+    },
+    {
+      "path": "kv_ana/docs/method_coverage.md",
+      "bytes": 5726
+    },
+    {
+      "path": "kv_ana/docs/recipe_readiness_v1.md",
+      "bytes": 3554
+    },
+    {
+      "path": "kv_ana/docs/server_adapter_contract.md",
+      "bytes": 2376
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/README.md",
+      "bytes": 124
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/01_cacheblend.md",
+      "bytes": 2104
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/01_cacheblend.yaml",
+      "bytes": 8569
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/02_epic.md",
+      "bytes": 2465
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/02_epic.yaml",
+      "bytes": 10322
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/03_cache_craft.md",
+      "bytes": 1551
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/03_cache_craft.yaml",
+      "bytes": 6972
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/05_a3.md",
+      "bytes": 1619
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/05_a3.yaml",
+      "bytes": 7383
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/07_prophetkv.md",
+      "bytes": 1365
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/07_prophetkv.yaml",
+      "bytes": 6239
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/08_qcfuse.md",
+      "bytes": 4814
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/08_qcfuse.yaml",
+      "bytes": 15763
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/10_relaycaching.md",
+      "bytes": 1885
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/10_relaycaching.yaml",
+      "bytes": 9341
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/12_kvcomm.md",
+      "bytes": 2208
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/12_kvcomm.yaml",
+      "bytes": 9974
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/13_cacheslide.md",
+      "bytes": 1980
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/13_cacheslide.yaml",
+      "bytes": 9398
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/14_agentkvshift.md",
+      "bytes": 2042
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/14_agentkvshift.yaml",
+      "bytes": 7853
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_coverage_matrix.csv",
+      "bytes": 3653
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_evidence_matrix.csv",
+      "bytes": 1514
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_extraction_report.json",
+      "bytes": 3927
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_implementation_readiness.md",
+      "bytes": 2776
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_recipe_evidence_coverage.csv",
+      "bytes": 1549
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_source_version_matrix.csv",
+      "bytes": 2100
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_unresolved_questions.md",
+      "bytes": 2463
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/04_kvshare.md",
+      "bytes": 1728
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/04_kvshare.yaml",
+      "bytes": 9008
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/06_fusionrag.md",
+      "bytes": 1089
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/06_fusionrag.yaml",
+      "bytes": 8765
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/09_cachetune.md",
+      "bytes": 914
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/09_cachetune.yaml",
+      "bytes": 8200
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/11_daf.md",
+      "bytes": 815
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/11_daf.yaml",
+      "bytes": 7356
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/15_kvlink.md",
+      "bytes": 1099
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/15_kvlink.yaml",
+      "bytes": 9641
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/16_kvpacket.md",
+      "bytes": 1014
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/16_kvpacket.yaml",
+      "bytes": 9392
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/17_c2kv.md",
+      "bytes": 1002
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/17_c2kv.yaml",
+      "bytes": 10286
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/18_irminsul.md",
+      "bytes": 927
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/18_irminsul.yaml",
+      "bytes": 7870
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/19_recache.md",
+      "bytes": 1014
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/19_recache.yaml",
+      "bytes": 11600
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/20_mepic.md",
+      "bytes": 926
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/20_mepic.yaml",
+      "bytes": 7880
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/source_inventory.json",
+      "bytes": 4950
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/source_inventory.md",
+      "bytes": 3163
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_coverage_matrix.csv",
+      "bytes": 3633
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_evidence_matrix.csv",
+      "bytes": 1699
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_extraction_report.json",
+      "bytes": 963
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_implementation_readiness.md",
+      "bytes": 2103
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_recipe_evidence_coverage.csv",
+      "bytes": 1606
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_source_version_matrix.csv",
+      "bytes": 1722
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_unresolved_questions.md",
+      "bytes": 1764
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/source_inventory.json",
+      "bytes": 18216
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/source_inventory.md",
+      "bytes": 10237
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_coverage_matrix.csv",
+      "bytes": 7080
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_execution_capability_matrix.csv",
+      "bytes": 1928
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_extraction_report.json",
+      "bytes": 785
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_method_taxonomy.md",
+      "bytes": 1741
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_readiness_matrix.csv",
+      "bytes": 2641
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_recipe_evidence_coverage.csv",
+      "bytes": 2927
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_source_version_matrix.csv",
+      "bytes": 3528
+    },
+    {
+      "path": "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_unresolved_questions.md",
+      "bytes": 1040
+    },
+    {
+      "path": "kv_ana/manifests/lifemem_48_pairs.csv",
+      "bytes": 619
+    },
+    {
+      "path": "kv_ana/pyproject.toml",
+      "bytes": 602
+    },
+    {
+      "path": "kv_ana/references/historical_b1_b4.json",
+      "bytes": 5209
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/MANIFEST.json",
+      "bytes": 710
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/README.md",
+      "bytes": 6122
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/apply_intervention_patch.sh",
+      "bytes": 362
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/dsv4_state_intervention_v1.py",
+      "bytes": 13957
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/patch_block.pyfrag",
+      "bytes": 766
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/patch_runtime.py",
+      "bytes": 5800
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/restore_intervention_patch.sh",
+      "bytes": 364
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/server_precheck_runner.py",
+      "bytes": 14712
+    },
+    {
+      "path": "kv_ana/runtime_intervention/dsv4_precheck_v1/start.INTERVENTION.sh",
+      "bytes": 1040
+    },
+    {
+      "path": "kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/MANIFEST.json",
+      "bytes": 2296
+    },
+    {
+      "path": "kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/SHA256SUMS",
+      "bytes": 530
+    },
+    {
+      "path": "kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/compare_server_runtime.sh",
+      "bytes": 3892
+    },
+    {
+      "path": "kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/official/vllm-ascend/vllm_ascend/attention/dsa_v1.py",
+      "bytes": 121566
+    },
+    {
+      "path": "kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/official/vllm-ascend/vllm_ascend/models/deepseek_v4.py",
+      "bytes": 62672
+    },
+    {
+      "path": "kv_ana/runtime_references/dsv4_runtime_official_reference_v0221/official/vllm/vllm/models/deepseek_v4/compressor.py",
+      "bytes": 14259
+    },
+    {
+      "path": "kv_ana/scripts/build_complete_source_bundle.py",
+      "bytes": 5084
+    },
+    {
+      "path": "kv_ana/scripts/build_state_research_bundle.py",
+      "bytes": 2916
+    },
+    {
+      "path": "kv_ana/scripts/build_v41_joint_bundle.py",
+      "bytes": 3059
+    },
+    {
+      "path": "kv_ana/scripts/prepare_state_research.py",
+      "bytes": 313
+    },
+    {
+      "path": "kv_ana/scripts/real_adapter_smoke.py",
+      "bytes": 2322
+    },
+    {
+      "path": "kv_ana/scripts/real_observability_smoke.py",
+      "bytes": 12501
+    },
+    {
+      "path": "kv_ana/scripts/run_real_offline_pipeline.py",
+      "bytes": 1935
+    },
+    {
+      "path": "kv_ana/scripts/run_real_offline_smoke.py",
+      "bytes": 297
+    },
+    {
+      "path": "kv_ana/scripts/run_state_research_offline.py",
+      "bytes": 243
+    },
+    {
+      "path": "kv_ana/scripts/state_research_offline_smoke.py",
+      "bytes": 2436
+    },
+    {
+      "path": "kv_ana/scripts/state_research_smoke.py",
+      "bytes": 2701
+    },
+    {
+      "path": "kv_ana/scripts/validate_v41_joint_client.py",
+      "bytes": 10504
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/__init__.py",
+      "bytes": 316
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/adapters/__init__.py",
+      "bytes": 407
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/adapters/common.py",
+      "bytes": 967
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/adapters/deepseek_c4.py",
+      "bytes": 12268
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/adapters/qwen_rawkv.py",
+      "bytes": 9957
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/cli/__init__.py",
+      "bytes": 34
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/cli/recipes.py",
+      "bytes": 1902
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/cli/run.py",
+      "bytes": 865
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/cli/smoke.py",
+      "bytes": 1144
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/data/__init__.py",
+      "bytes": 113
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/data/adapters/__init__.py",
+      "bytes": 68
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/data/adapters/base.py",
+      "bytes": 329
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/data/dataset.py",
+      "bytes": 2156
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/data/synthetic.py",
+      "bytes": 8818
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/data/types.py",
+      "bytes": 4000
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/execution/__init__.py",
+      "bytes": 268
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/execution/artifacts.py",
+      "bytes": 7259
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/execution/checkpoint.py",
+      "bytes": 3687
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/execution/config.py",
+      "bytes": 1756
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/execution/invariants.py",
+      "bytes": 5502
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/execution/runner.py",
+      "bytes": 15250
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/__init__.py",
+      "bytes": 106
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/anchor.py",
+      "bytes": 5435
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/base.py",
+      "bytes": 7321
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/baseline.py",
+      "bytes": 398
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/composite.py",
+      "bytes": 3860
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/detector.py",
+      "bytes": 11295
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/lowrank.py",
+      "bytes": 4560
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/placeholders.py",
+      "bytes": 2035
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/position.py",
+      "bytes": 5323
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/probe.py",
+      "bytes": 4208
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/registry.py",
+      "bytes": 7426
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/selective.py",
+      "bytes": 17223
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/methods/shared.py",
+      "bytes": 621
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/metrics/__init__.py",
+      "bytes": 186
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/metrics/aggregate.py",
+      "bytes": 3388
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/metrics/residual.py",
+      "bytes": 1668
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/__init__.py",
+      "bytes": 458
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/ablations.py",
+      "bytes": 13106
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/collector.py",
+      "bytes": 7375
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/cost.py",
+      "bytes": 5808
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/events.py",
+      "bytes": 4186
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/forensic.py",
+      "bytes": 4167
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/method_adapter.py",
+      "bytes": 4503
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/schema.py",
+      "bytes": 5072
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/observability/writer.py",
+      "bytes": 4134
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/__init__.py",
+      "bytes": 134
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/b5.py",
+      "bytes": 4221
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/capability_audit.py",
+      "bytes": 3880
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/capsule.py",
+      "bytes": 3833
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/io.py",
+      "bytes": 1270
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/paper_offline.py",
+      "bytes": 8433
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/provider_plan.py",
+      "bytes": 5854
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/providers.py",
+      "bytes": 3544
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/real_data.py",
+      "bytes": 5870
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/pipeline/runner.py",
+      "bytes": 11924
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/providers/__init__.py",
+      "bytes": 596
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/providers/base.py",
+      "bytes": 3520
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/providers/synthetic.py",
+      "bytes": 5814
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/__init__.py",
+      "bytes": 154
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/agentkvshift.py",
+      "bytes": 12769
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/cacheblend.py",
+      "bytes": 5062
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/cacheslide.py",
+      "bytes": 14563
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/contract.py",
+      "bytes": 6711
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/kvcomm.py",
+      "bytes": 6232
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/registry.py",
+      "bytes": 3175
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/01_cacheblend.yaml",
+      "bytes": 530
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/02_epic.yaml",
+      "bytes": 560
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/03_cache_craft.yaml",
+      "bytes": 592
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/04_kvshare.yaml",
+      "bytes": 631
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/05_a3.yaml",
+      "bytes": 578
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/06_fusionrag.yaml",
+      "bytes": 708
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/07_prophetkv.yaml",
+      "bytes": 609
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/08_qcfuse.yaml",
+      "bytes": 637
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/09_cachetune.yaml",
+      "bytes": 605
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/10_relaycaching.yaml",
+      "bytes": 592
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/11_daf.yaml",
+      "bytes": 640
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/12_kvcomm.yaml",
+      "bytes": 532
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/13_cacheslide.yaml",
+      "bytes": 636
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/14_agentkvshift.yaml",
+      "bytes": 577
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/15_kvlink.yaml",
+      "bytes": 603
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/16_kvpacket.yaml",
+      "bytes": 552
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/17_c2kv.yaml",
+      "bytes": 562
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/18_irminsul.yaml",
+      "bytes": 576
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/19_recache.yaml",
+      "bytes": 601
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/recipes/specs/20_mepic.yaml",
+      "bytes": 564
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/regression/__init__.py",
+      "bytes": 204
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/regression/historical_refs.py",
+      "bytes": 402
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/regression/historical_suite.py",
+      "bytes": 19194
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/regression/manifest.py",
+      "bytes": 1217
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/regression/math.py",
+      "bytes": 6977
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/__init__.py",
+      "bytes": 131
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/agentmon.py",
+      "bytes": 5322
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/alignment.py",
+      "bytes": 5882
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/fixtures.py",
+      "bytes": 3094
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/io.py",
+      "bytes": 2449
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/lifecycle.py",
+      "bytes": 14719
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/lifemem.py",
+      "bytes": 14857
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/offline_fixtures.py",
+      "bytes": 6577
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/offline_suite.py",
+      "bytes": 15719
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/policy_replay.py",
+      "bytes": 7538
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/prepare.py",
+      "bytes": 10153
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/recovery.py",
+      "bytes": 10149
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/replay.py",
+      "bytes": 2210
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/request_bridge.py",
+      "bytes": 5136
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/scenarios.py",
+      "bytes": 1630
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/snapshot_archive.py",
+      "bytes": 3290
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/state_compare.py",
+      "bytes": 6646
+    },
+    {
+      "path": "kv_ana/src/kvreuse_b5/state_research/state_inventory.py",
+      "bytes": 6955
+    },
+    {
+      "path": "kv_ana/tests/test_capabilities_composite.py",
+      "bytes": 2556
+    },
+    {
+      "path": "kv_ana/tests/test_data_metrics.py",
+      "bytes": 1964
+    },
+    {
+      "path": "kv_ana/tests/test_dsv4_intervention_precheck.py",
+      "bytes": 6630
+    },
+    {
+      "path": "kv_ana/tests/test_lowrank_probe.py",
+      "bytes": 1920
+    },
+    {
+      "path": "kv_ana/tests/test_observability_recipes.py",
+      "bytes": 10515
+    },
+    {
+      "path": "kv_ana/tests/test_observability_schema_collector.py",
+      "bytes": 7952
+    },
+    {
+      "path": "kv_ana/tests/test_position.py",
+      "bytes": 516
+    },
+    {
+      "path": "kv_ana/tests/test_real_adapters_deepseek.py",
+      "bytes": 7353
+    },
+    {
+      "path": "kv_ana/tests/test_real_adapters_qwen.py",
+      "bytes": 5932
+    },
+    {
+      "path": "kv_ana/tests/test_real_offline_pipeline.py",
+      "bytes": 2871
+    },
+    {
+      "path": "kv_ana/tests/test_real_offline_regression.py",
+      "bytes": 3666
+    },
+    {
+      "path": "kv_ana/tests/test_recipe_agentkvshift.py",
+      "bytes": 2123
+    },
+    {
+      "path": "kv_ana/tests/test_recipe_cacheblend.py",
+      "bytes": 1813
+    },
+    {
+      "path": "kv_ana/tests/test_recipe_cacheslide.py",
+      "bytes": 2221
+    },
+    {
+      "path": "kv_ana/tests/test_recipe_contract.py",
+      "bytes": 2738
+    },
+    {
+      "path": "kv_ana/tests/test_recipe_kvcomm.py",
+      "bytes": 2385
+    },
+    {
+      "path": "kv_ana/tests/test_request_state_bridge.py",
+      "bytes": 3551
+    },
+    {
+      "path": "kv_ana/tests/test_runner_checkpoint.py",
+      "bytes": 1814
+    },
+    {
+      "path": "kv_ana/tests/test_selective_detector_anchor.py",
+      "bytes": 3477
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_alignment.py",
+      "bytes": 7610
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_artifact_audit.py",
+      "bytes": 2251
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_batch1_audit.py",
+      "bytes": 5389
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_contract.py",
+      "bytes": 11858
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_lifecycle.py",
+      "bytes": 8146
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_lifecycle_audit.py",
+      "bytes": 11639
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_recovery.py",
+      "bytes": 11966
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_recovery_audit.py",
+      "bytes": 7057
+    },
+    {
+      "path": "kv_ana/tests/test_state_research_suite_audit.py",
+      "bytes": 7746
+    },
+    {
+      "path": "kv_ana/tests/test_v201_correctness_patch.py",
+      "bytes": 11335
+    },
+    {
+      "path": "kv_ana/tests/test_v2_regressions.py",
+      "bytes": 14627
+    }
+  ],
+  "generated_files": [
+    "BUILD_MANIFEST.json",
+    "README.md",
+    "SOURCE_TREE.txt"
+  ]
+}

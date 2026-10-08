@@ -1,0 +1,1878 @@
+diff --git a/README.md b/README.md
+index 4a7e0a2..99b098d 100644
+--- a/README.md
++++ b/README.md
+@@ -732,6 +732,29 @@ not printed as `0%` and is not included in aggregate hit-rate averages. Missing
+ metrics remain `null` in JSON and `N/A` in table/CSV output; aggregate sections
+ include sample counts and coverage where applicable.
+ 
++For ad-hoc performance inspection, use the compact performance summary script.
++Ascend collection is host-wide, so task-level NPU metrics require explicit
++target devices or trustworthy P2 service metadata. The compatibility fields
++`ascend_peak_hbm_used_bytes` and `ascend_max_aicore_util_pct` are target-device
++aliases; when target devices are unknown they remain `N/A` instead of falling
++back to host-wide maxima.
++
++```bash
++PYTHONPATH="$AGENTMON_REPO/src" \
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_perf_summary.py" \
++  "$AGENTMON_HOME/runs/<run-id>" \
++  --p2-events "$AGENTMON_HOME/runs/<run-id>/p2-events-for-run.jsonl" \
++  --ascend-devices 0,1,2,3 \
++  --format table
++```
++
++Use `--p2-service-exclusive` only when the captured P2 stream is known to
++contain requests from this run only, for example a dedicated validation service
++or a captured offset window with no other clients. Without that explicit flag,
++P2 token totals are shown as service-stream metrics but are not used to backfill
++Agent token fields. Host-wide NPU maxima remain available as
++`ascend_host_peak_hbm_used_bytes` and `ascend_host_max_aicore_util_pct`.
++
+ ## P0 Limits
+ 
+ P0 can show process CPU/RSS/PSS/I/O, host load and PSI, NPU utilization and
+diff --git a/docs/p2_vllm_adapter.md b/docs/p2_vllm_adapter.md
+index c68a4e5..0bb4631 100644
+--- a/docs/p2_vllm_adapter.md
++++ b/docs/p2_vllm_adapter.md
+@@ -749,6 +749,26 @@ Current foundation:
+ - `summary.json` and `agentmon aggregate` expose compact KV pool/state and NPU
+   attribution fields.
+ 
++Performance attribution must separate host-wide collection from task target
++devices. `npu-smi` samples may include devices not used by the validation vLLM
++service, so compact performance summaries should pass explicit physical device
++ids when known:
++
++```bash
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_perf_summary.py" \
++  "$RUN_DIR" \
++  --p2-events "$RUN_DIR/p2-events-for-run.jsonl" \
++  --ascend-devices 0,1,2,3 \
++  --format table
++```
++
++The runtime hook emits `visible_devices` metadata from
++`ASCEND_RT_VISIBLE_DEVICES` / `ASCEND_VISIBLE_DEVICES` when available, but
++explicit CLI devices have priority. Without reliable target-device attribution,
++target NPU metrics remain `null` / `N/A`; host-wide maxima are reported under
++`ascend_host_*` fields. P2 service-stream token totals must not backfill Agent
++tokens unless `--p2-service-exclusive` is set for an isolated request window.
++
+ Runtime hook status for P2.3:
+ 
+ - The opt-in runtime loader emits KV snapshots from `Scheduler` and
+diff --git a/scripts/agentmon_p1_smoke_check.py b/scripts/agentmon_p1_smoke_check.py
+index 2b16863..51747f9 100644
+--- a/scripts/agentmon_p1_smoke_check.py
++++ b/scripts/agentmon_p1_smoke_check.py
+@@ -1,193 +1,278 @@
+-#!/usr/bin/env python3
+-from __future__ import annotations
+-
+-import argparse
+-import json
+-import os
+-from pathlib import Path
+-import sys
+-from typing import Any, Sequence
+-
+-
+-def main(argv: Sequence[str] | None = None) -> int:
+-    args = build_parser().parse_args(argv)
+-    try:
+-        summary = load_summary(Path(args.run_dir))
+-        smoke_rc = rc_value(args.smoke_rc, "SMOKE_RC")
+-        final_test_rc = rc_value(args.final_test_rc, "FINAL_TEST_RC")
+-        result = build_smoke_result(summary, smoke_rc=smoke_rc, final_test_rc=final_test_rc)
+-    except Exception as exc:
+-        print(f"agentmon p1 smoke check error: {exc}", file=sys.stderr)
+-        return 2
+-    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+-    return 0 if args.no_strict or result["task_success"] else 1
+-
+-
+-def build_parser() -> argparse.ArgumentParser:
+-    parser = argparse.ArgumentParser(description="Check an AgentMon P1 smoke run from summary/report JSON")
+-    parser.add_argument("run_dir", help="AgentMon run directory containing summary.json or report.json")
+-    parser.add_argument("--smoke-rc", type=int, help="wrapper smoke command return code; defaults to SMOKE_RC")
+-    parser.add_argument("--final-test-rc", type=int, help="final test command return code; defaults to FINAL_TEST_RC")
+-    parser.add_argument("--no-strict", action="store_true", help="always exit 0 after printing JSON")
+-    return parser
+-
+-
+-def load_summary(run_dir: Path) -> dict[str, Any]:
+-    summary_path = run_dir / "summary.json"
+-    if summary_path.exists():
+-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+-        if "data_integrity_pass" in summary and "command_nonzero_count" in summary:
+-            return summary
+-    report_path = run_dir / "report.json"
+-    if report_path.exists():
+-        return summarize_report(json.loads(report_path.read_text(encoding="utf-8")))
+-    raise FileNotFoundError(f"summary.json/report.json not found under {run_dir}")
+-
+-
+-def summarize_report(report: dict[str, Any]) -> dict[str, Any]:
+-    manifest = as_dict(report.get("manifest"))
+-    agent = as_dict(report.get("agent"))
+-    event_log = as_dict(report.get("event_log"))
+-    p1 = as_dict(report.get("p1_spans"))
+-    tool_attr = as_dict(report.get("tool_attribution"))
+-    run_status = report.get("status") or manifest.get("status")
+-    exit_code = report.get("exit_code") if report.get("exit_code") is not None else manifest.get("exit_code")
+-    agent_exit_status = agent.get("exit_status")
+-    summary = {
+-        "schema_version": "1.0",
+-        "summary_type": "agentmon.p1_smoke_summary",
+-        "run_id": report.get("run_id") or manifest.get("run_id"),
+-        "run_status": run_status,
+-        "exit_code": exit_code,
+-        "agent_exit_status": agent_exit_status,
+-        "invalid_json_lines": number_or_none(event_log.get("jsonl_invalid_count", event_log.get("jsonl_invalid_lines"))),
+-        "duplicate_event_ids": number_or_none(event_log.get("duplicate_event_ids")),
+-        "open_spans": number_or_none(p1.get("open_span_count")),
+-        "negative_durations": number_or_none(p1.get("negative_duration_count")),
+-        "event_count_mismatch": bool(event_log.get("event_count_mismatch") or event_log.get("p0_jsonl_sqlite_mismatch")),
+-        "instrumentation_error_count": count_instrumentation_errors(report),
+-        "command_nonzero_count": count_nonzero_commands(tool_attr),
+-        "expected_test_failure_count": number_or_none(manifest.get("expected_test_failure_count")),
+-        "submission_control_flow_count": count_submission_control_flow(report),
+-    }
+-    summary["data_integrity_pass"] = data_integrity_pass(summary)
+-    summary["task_success"] = (
+-        run_status == "success"
+-        and exit_code == 0
+-        and str(agent_exit_status).lower() == "submitted"
+-        and summary["data_integrity_pass"]
+-    )
+-    return summary
+-
+-
+-def build_smoke_result(summary: dict[str, Any], *, smoke_rc: int | None, final_test_rc: int | None) -> dict[str, Any]:
+-    issues: list[str] = []
+-    if smoke_rc != 0:
+-        issues.append("smoke_rc")
+-    if final_test_rc != 0:
+-        issues.append("final_test_rc")
+-    if summary.get("run_status") != "success":
+-        issues.append("run_status")
+-    if str(summary.get("agent_exit_status")).lower() != "submitted":
+-        issues.append("agent_exit_status")
+-    if summary.get("data_integrity_pass") is not True:
+-        issues.append("data_integrity")
+-    return {
+-        "schema_version": "1.0",
+-        "smoke_check_type": "agentmon.p1_smoke_check",
+-        "run_id": summary.get("run_id"),
+-        "task_success": not issues,
+-        "data_integrity_pass": summary.get("data_integrity_pass"),
+-        "instrumentation_error_count": summary.get("instrumentation_error_count"),
+-        "command_nonzero_count": summary.get("command_nonzero_count"),
+-        "expected_test_failure_count": summary.get("expected_test_failure_count"),
+-        "submission_control_flow_count": summary.get("submission_control_flow_count"),
+-        "criteria": {
+-            "smoke_rc": smoke_rc,
+-            "final_test_rc": final_test_rc,
+-            "run_status": summary.get("run_status"),
+-            "agent_exit_status": summary.get("agent_exit_status"),
+-            "invalid_json_lines": summary.get("invalid_json_lines"),
+-            "duplicate_event_ids": summary.get("duplicate_event_ids"),
+-            "open_spans": summary.get("open_spans"),
+-            "negative_durations": summary.get("negative_durations"),
+-            "event_count_mismatch": summary.get("event_count_mismatch"),
+-        },
+-        "issues": issues,
+-    }
+-
+-
+-def data_integrity_pass(summary: dict[str, Any]) -> bool:
+-    return (
+-        not positive(summary.get("invalid_json_lines"))
+-        and not positive(summary.get("duplicate_event_ids"))
+-        and not positive(summary.get("open_spans"))
+-        and not positive(summary.get("negative_durations"))
+-        and not bool(summary.get("event_count_mismatch"))
+-    )
+-
+-
+-def count_nonzero_commands(tool_attr: dict[str, Any]) -> int | None:
+-    tools = tool_attr.get("tools")
+-    if not isinstance(tools, list):
+-        return None
+-    return sum(1 for tool in tools if isinstance(tool, dict) and isinstance(tool.get("returncode"), int) and tool["returncode"] != 0)
+-
+-
+-def count_instrumentation_errors(report: dict[str, Any]) -> int | None:
+-    spans = as_dict(report.get("p1_spans")).get("spans")
+-    if isinstance(spans, list):
+-        return sum(
+-            1
+-            for span in spans
+-            if isinstance(span, dict)
+-            and span.get("status") == "error"
+-            and span.get("terminal_reason") != "submitted"
+-            and not span.get("submission_control_flow")
+-        )
+-    errors = report.get("errors")
+-    if not isinstance(errors, list):
+-        return None
+-    return sum(1 for error in errors if isinstance(error, dict) and str(error.get("event_type", "")).endswith(".error"))
+-
+-
+-def count_submission_control_flow(report: dict[str, Any]) -> int | None:
+-    spans = as_dict(report.get("p1_spans")).get("spans")
+-    if not isinstance(spans, list):
+-        return None
+-    return sum(
+-        1
+-        for span in spans
+-        if isinstance(span, dict)
+-        and (span.get("terminal_reason") == "submitted" or span.get("submission_control_flow") is True)
+-    )
+-
+-
+-def rc_value(value: int | None, env_name: str) -> int | None:
+-    if value is not None:
+-        return value
+-    raw = os.environ.get(env_name)
+-    if raw in {None, ""}:
+-        return None
+-    return int(raw)
+-
+-
+-def as_dict(value: Any) -> dict[str, Any]:
+-    return value if isinstance(value, dict) else {}
+-
+-
+-def number_or_none(value: Any) -> int | float | None:
+-    if isinstance(value, bool) or value is None:
+-        return None
+-    if isinstance(value, (int, float)):
+-        return value
+-    return None
+-
+-
+-def positive(value: Any) -> bool:
+-    numeric = number_or_none(value)
+-    return numeric is not None and numeric > 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+\ No newline at end of file
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import json
++import os
++from pathlib import Path
++import sys
++from typing import Any, Sequence
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    args = build_parser().parse_args(argv)
++    try:
++        summary = load_summary(Path(args.run_dir))
++        smoke_rc = rc_value(args.smoke_rc, "SMOKE_RC")
++        final_test_rc = rc_value(args.final_test_rc, "FINAL_TEST_RC")
++        result = build_smoke_result(summary, smoke_rc=smoke_rc, final_test_rc=final_test_rc)
++    except Exception as exc:
++        print(f"agentmon p1 smoke check error: {exc}", file=sys.stderr)
++        return 2
++    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
++    return 0 if args.no_strict or result["task_success"] else 1
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Check an AgentMon P1 smoke run from summary/report JSON")
++    parser.add_argument("run_dir", help="AgentMon run directory containing summary.json or report.json")
++    parser.add_argument("--smoke-rc", type=int, help="wrapper smoke command return code; defaults to SMOKE_RC")
++    parser.add_argument("--final-test-rc", type=int, help="final test command return code; defaults to FINAL_TEST_RC")
++    parser.add_argument("--no-strict", action="store_true", help="always exit 0 after printing JSON")
++    return parser
++
++
++def load_summary(run_dir: Path) -> dict[str, Any]:
++    summary_path = run_dir / "summary.json"
++    if summary_path.exists():
++        summary = json.loads(summary_path.read_text(encoding="utf-8"))
++        if "data_integrity_pass" in summary and "command_nonzero_count" in summary:
++            return summary
++    report_path = run_dir / "report.json"
++    if report_path.exists():
++        return summarize_report(json.loads(report_path.read_text(encoding="utf-8")))
++    raise FileNotFoundError(f"summary.json/report.json not found under {run_dir}")
++
++
++def summarize_report(report: dict[str, Any]) -> dict[str, Any]:
++    manifest = as_dict(report.get("manifest"))
++    agent = as_dict(report.get("agent"))
++    event_log = as_dict(report.get("event_log"))
++    p1 = as_dict(report.get("p1_spans"))
++    tool_attr = as_dict(report.get("tool_attribution"))
++    proc = as_dict(report.get("proc"))
++    kv_cache = as_dict(report.get("kv_cache"))
++    data_quality = as_dict(report.get("data_quality"))
++    vllm_p2 = as_dict(report.get("vllm_p2"))
++    ascend = as_dict(report.get("ascend"))
++    ascend_device_summary = as_dict(ascend.get("device_summary"))
++    run_status = report.get("status") or manifest.get("status")
++    exit_code = report.get("exit_code") if report.get("exit_code") is not None else manifest.get("exit_code")
++    agent_exit_status = agent.get("exit_status")
++    prompt_tokens = number_or_none(agent.get("prompt_tokens"))
++    generation_tokens = number_or_none(agent.get("completion_tokens"))
++    cached_tokens = number_or_none(agent.get("cached_tokens"))
++    token_source = agent.get("token_source")
++    token_missing_reason = agent.get("token_missing_reason")
++    if prompt_tokens is None and generation_tokens is None and cached_tokens is None:
++        token_source = token_source or "unavailable"
++        token_missing_reason = (
++            token_missing_reason
++            or "trajectory_usage_fields_absent;p1_usage_fields_absent;p2_attribution_not_exclusive"
++        )
++    summary = {
++        "schema_version": "1.0",
++        "summary_type": "agentmon.p1_smoke_summary",
++        "run_id": report.get("run_id") or manifest.get("run_id"),
++        "run_status": run_status,
++        "exit_code": exit_code,
++        "agent_exit_status": agent_exit_status,
++        "data_quality": data_quality,
++        "p1_status": p1.get("status"),
++        "invalid_json_lines": number_or_none(event_log.get("jsonl_invalid_count", event_log.get("jsonl_invalid_lines"))),
++        "duplicate_event_ids": number_or_none(event_log.get("duplicate_event_ids")),
++        "open_spans": number_or_none(p1.get("open_span_count")),
++        "negative_durations": number_or_none(p1.get("negative_duration_count")),
++        "event_count_mismatch": bool(event_log.get("event_count_mismatch") or event_log.get("p0_jsonl_sqlite_mismatch")),
++        "instrumentation_error_count": count_instrumentation_errors(report),
++        "command_nonzero_count": count_nonzero_commands(tool_attr),
++        "expected_test_failure_count": number_or_none(manifest.get("expected_test_failure_count")),
++        "submission_control_flow_count": count_submission_control_flow(report),
++        "proc_agent_process_count_max": number_or_none(proc.get("agent_process_count_max")),
++        "npu_target_attribution_status": ascend_device_summary.get("target_attribution_status") or "unavailable",
++        "prompt_tokens": prompt_tokens,
++        "generation_tokens": generation_tokens,
++        "cached_tokens": cached_tokens,
++        "token_source": token_source,
++        "token_missing_reason": token_missing_reason,
++        "prefix_cache_status": kv_cache.get("prefix_cache_status"),
++        "prefix_cache_hit_rate": kv_cache.get("prefix_cache_hit_rate"),
++        "p2_status": vllm_p2.get("status"),
++        "p2_request_count": number_or_none(vllm_p2.get("request_count")),
++    }
++    summary["data_integrity_pass"] = data_integrity_pass(summary)
++    summary["task_success"] = (
++        run_status == "success"
++        and exit_code == 0
++        and str(agent_exit_status).lower() == "submitted"
++        and summary["data_integrity_pass"]
++    )
++    return summary
++
++
++def build_smoke_result(summary: dict[str, Any], *, smoke_rc: int | None, final_test_rc: int | None) -> dict[str, Any]:
++    issues: list[str] = []
++    if smoke_rc != 0:
++        issues.append("smoke_rc")
++    if final_test_rc != 0:
++        issues.append("final_test_rc")
++    if summary.get("run_status") != "success":
++        issues.append("run_status")
++    if str(summary.get("agent_exit_status")).lower() != "submitted":
++        issues.append("agent_exit_status")
++    if summary.get("data_integrity_pass") is not True:
++        issues.append("data_integrity")
++    quality_issues = data_quality_issues(summary)
++    issues.extend(quality_issues)
++    return {
++        "schema_version": "1.0",
++        "smoke_check_type": "agentmon.p1_smoke_check",
++        "run_id": summary.get("run_id"),
++        "task_success": not issues,
++        "data_integrity_pass": summary.get("data_integrity_pass"),
++        "instrumentation_error_count": summary.get("instrumentation_error_count"),
++        "command_nonzero_count": summary.get("command_nonzero_count"),
++        "expected_test_failure_count": summary.get("expected_test_failure_count"),
++        "submission_control_flow_count": summary.get("submission_control_flow_count"),
++        "criteria": {
++            "smoke_rc": smoke_rc,
++            "final_test_rc": final_test_rc,
++            "run_status": summary.get("run_status"),
++            "agent_exit_status": summary.get("agent_exit_status"),
++            "invalid_json_lines": summary.get("invalid_json_lines"),
++            "duplicate_event_ids": summary.get("duplicate_event_ids"),
++            "open_spans": summary.get("open_spans"),
++            "negative_durations": summary.get("negative_durations"),
++            "event_count_mismatch": summary.get("event_count_mismatch"),
++            "trajectory_status": nested_quality(summary, "trajectory"),
++            "p1_status": summary.get("p1_status"),
++            "proc_agent_process_count_max": summary.get("proc_agent_process_count_max"),
++            "npu_target_attribution_status": summary.get("npu_target_attribution_status"),
++            "token_source": summary.get("token_source"),
++            "token_missing_reason": summary.get("token_missing_reason"),
++            "prefix_cache_status": summary.get("prefix_cache_status"),
++            "prefix_cache_hit_rate": summary.get("prefix_cache_hit_rate"),
++            "p2_status": summary.get("p2_status"),
++            "p2_request_count": summary.get("p2_request_count"),
++        },
++        "issues": issues,
++    }
++
++
++def data_integrity_pass(summary: dict[str, Any]) -> bool:
++    return (
++        not positive(summary.get("invalid_json_lines"))
++        and not positive(summary.get("duplicate_event_ids"))
++        and not positive(summary.get("open_spans"))
++        and not positive(summary.get("negative_durations"))
++        and not bool(summary.get("event_count_mismatch"))
++    )
++
++
++def count_nonzero_commands(tool_attr: dict[str, Any]) -> int | None:
++    tools = tool_attr.get("tools")
++    if not isinstance(tools, list):
++        return None
++    return sum(1 for tool in tools if isinstance(tool, dict) and isinstance(tool.get("returncode"), int) and tool["returncode"] != 0)
++
++
++def count_instrumentation_errors(report: dict[str, Any]) -> int | None:
++    spans = as_dict(report.get("p1_spans")).get("spans")
++    if isinstance(spans, list):
++        return sum(
++            1
++            for span in spans
++            if isinstance(span, dict)
++            and span.get("status") == "error"
++            and span.get("terminal_reason") != "submitted"
++            and not span.get("submission_control_flow")
++        )
++    errors = report.get("errors")
++    if not isinstance(errors, list):
++        return None
++    return sum(1 for error in errors if isinstance(error, dict) and str(error.get("event_type", "")).endswith(".error"))
++
++
++def count_submission_control_flow(report: dict[str, Any]) -> int | None:
++    spans = as_dict(report.get("p1_spans")).get("spans")
++    if not isinstance(spans, list):
++        return None
++    return sum(
++        1
++        for span in spans
++        if isinstance(span, dict)
++        and (span.get("terminal_reason") == "submitted" or span.get("submission_control_flow") is True)
++    )
++
++
++def rc_value(value: int | None, env_name: str) -> int | None:
++    if value is not None:
++        return value
++    raw = os.environ.get(env_name)
++    if raw in {None, ""}:
++        return None
++    return int(raw)
++
++
++def as_dict(value: Any) -> dict[str, Any]:
++    return value if isinstance(value, dict) else {}
++
++
++def number_or_none(value: Any) -> int | float | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, (int, float)):
++        return value
++    return None
++
++
++def positive(value: Any) -> bool:
++    numeric = number_or_none(value)
++    return numeric is not None and numeric > 0
++
++
++def data_quality_issues(summary: dict[str, Any]) -> list[str]:
++    issues: list[str] = []
++    data_quality = summary.get("data_quality") if isinstance(summary.get("data_quality"), dict) else {}
++    if data_quality.get("trajectory") != "complete":
++        issues.append("trajectory_quality")
++    if summary.get("p1_status") != "complete":
++        issues.append("p1_spans")
++    process_count_max = numeric_or_none(summary.get("proc_agent_process_count_max"))
++    if process_count_max is not None and process_count_max <= 0:
++        issues.append("proc_agent_process_count")
++    npu_status = summary.get("npu_target_attribution_status")
++    if npu_status not in {None, "complete", "partial", "unavailable"}:
++        issues.append("npu_target_attribution_status")
++    if token_fields_missing(summary):
++        issues.append("token_attribution")
++    if summary.get("prefix_cache_status") == "disabled" and summary.get("prefix_cache_hit_rate") not in {None, "N/A"}:
++        issues.append("prefix_cache_disabled_hit_rate")
++    if summary.get("p2_status") not in {None, "missing", "complete", "partial"}:
++        issues.append("p2_status")
++    return issues
++
++
++def token_fields_missing(summary: dict[str, Any]) -> bool:
++    has_tokens = any(
++        numeric_or_none(summary.get(key)) is not None
++        for key in ("prompt_tokens", "generation_tokens", "cached_tokens")
++    )
++    if has_tokens:
++        return not summary.get("token_source")
++    return not (summary.get("token_source") or summary.get("token_missing_reason"))
++
++
++def nested_quality(summary: dict[str, Any], key: str) -> Any:
++    data_quality = summary.get("data_quality")
++    if not isinstance(data_quality, dict):
++        return None
++    return data_quality.get(key)
++
++
++def numeric_or_none(value: Any) -> float | int | None:
++    return number_or_none(value)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/scripts/agentmon_perf_summary.py b/scripts/agentmon_perf_summary.py
+index f4e5c19..f8005b6 100644
+--- a/scripts/agentmon_perf_summary.py
++++ b/scripts/agentmon_perf_summary.py
+@@ -10,10 +10,11 @@ from pathlib import Path
+ import sys
+ from typing import Any, Sequence
+ 
++from agentmon.reporting.ascend import resolve_ascend_target_devices, summarize_ascend_devices
+ from agentmon.reporting.report import build_report
+ 
+ 
+-SCHEMA_VERSION = "1.0"
++SCHEMA_VERSION = "1.1"
+ 
+ 
+ def main(argv: Sequence[str] | None = None) -> int:
+@@ -23,6 +24,8 @@ def main(argv: Sequence[str] | None = None) -> int:
+             Path(args.run_dir),
+             p2_events=Path(args.p2_events) if args.p2_events else None,
+             p2_attribution_quality=args.p2_attribution_quality,
++            ascend_devices=args.ascend_devices,
++            p2_service_exclusive=args.p2_service_exclusive,
+         )
+         print(format_summary(summary, args.format))
+     except Exception as exc:
+@@ -35,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
+     parser = argparse.ArgumentParser(description="Summarize AgentMon run performance metrics")
+     parser.add_argument("run_dir", help="AgentMon run directory containing report.json")
+     parser.add_argument("--p2-events", help="optional service-scoped P2 events.jsonl")
++    parser.add_argument("--ascend-devices", help="comma-separated physical npu-smi device ids for this run")
++    parser.add_argument(
++        "--p2-service-exclusive",
++        action="store_true",
++        help="allow service-scoped P2 token totals to backfill Agent tokens",
++    )
+     parser.add_argument(
+         "--p2-attribution-quality",
+         default="service_stream",
+@@ -50,8 +59,18 @@ def build_perf_summary(
+     *,
+     p2_events: Path | None = None,
+     p2_attribution_quality: str = "service_stream",
++    ascend_devices: str | None = None,
++    p2_service_exclusive: bool = False,
+ ) -> dict[str, Any]:
+     report = load_report(run_dir)
++    p2_event_rows = read_jsonl_events(p2_events) if p2_events is not None else []
++    if p2_service_exclusive:
++        p2_attribution_quality = "service_exclusive"
++    p2_summary = (
++        flatten_p2_summary(p2_event_rows, p2_attribution_quality=p2_attribution_quality)
++        if p2_events is not None
++        else {}
++    )
+     proc = as_dict(report.get("proc"))
+     ascend = as_dict(report.get("ascend"))
+     agent = as_dict(report.get("agent"))
+@@ -59,6 +78,15 @@ def build_perf_summary(
+     vllm = as_dict(report.get("vllm"))
+     kv_cache = as_dict(report.get("kv_cache"))
+     data_quality = as_dict(report.get("data_quality"))
++    target_resolution = resolve_ascend_target_devices(explicit_devices=ascend_devices, p2_events=p2_event_rows)
++    ascend_devices_summary = summarize_ascend_devices(
++        ascend,
++        target_devices=target_resolution["devices"],
++        target_device_source=target_resolution["source"],
++        visible_devices_raw=target_resolution["raw"],
++        mapping_quality=target_resolution["mapping_quality"],
++    )
++    token_fields = resolve_agent_token_fields(agent, p2_summary, p2_service_exclusive=p2_service_exclusive)
+ 
+     row: dict[str, Any] = {
+         "schema_version": SCHEMA_VERSION,
+@@ -74,10 +102,6 @@ def build_perf_summary(
+         "agent_assistant_turns": agent.get("assistant_turns"),
+         "agent_api_calls": agent.get("api_calls"),
+         "agent_tool_calls": agent.get("tool_calls"),
+-        "agent_prompt_tokens": agent.get("prompt_tokens"),
+-        "agent_completion_tokens": agent.get("completion_tokens"),
+-        "agent_cached_tokens": agent.get("cached_tokens"),
+-        "agent_token_source": agent.get("token_source"),
+         "agent_instance_cost": agent.get("instance_cost"),
+         "p1_status": p1.get("status"),
+         "p1_agent_steps": p1.get("agent_steps"),
+@@ -95,11 +119,22 @@ def build_perf_summary(
+         "proc_agent_pss_quality": proc.get("agent_pss_quality"),
+         "ascend_status": ascend.get("status"),
+         "ascend_sample_count": ascend.get("sample_count"),
++        "ascend_collection_scope": ascend_devices_summary.get("collection_scope"),
++        "ascend_collected_devices": ascend_devices_summary.get("collected_devices"),
++        "ascend_visible_devices_raw": ascend_devices_summary.get("visible_devices_raw"),
++        "ascend_target_devices": ascend_devices_summary.get("target_devices"),
++        "ascend_target_device_source": ascend_devices_summary.get("target_device_source"),
++        "ascend_target_device_mapping_quality": ascend_devices_summary.get("target_device_mapping_quality"),
++        "ascend_target_attribution_status": ascend_devices_summary.get("target_attribution_status"),
+         "ascend_parser_confidence": ascend.get("parser_confidence"),
+         "ascend_hbm_quality": ascend.get("hbm_quality"),
+         "ascend_aicore_quality": ascend.get("aicore_quality"),
+-        "ascend_peak_hbm_used_bytes": ascend_peak(ascend, "peak_hbm_used_bytes"),
+-        "ascend_max_aicore_util_pct": ascend_peak(ascend, "max_aicore_util_pct"),
++        "ascend_target_peak_hbm_used_bytes": ascend_devices_summary.get("target_peak_hbm_used_bytes"),
++        "ascend_target_max_aicore_util_pct": ascend_devices_summary.get("target_max_aicore_util_pct"),
++        "ascend_host_peak_hbm_used_bytes": ascend_devices_summary.get("host_peak_hbm_used_bytes"),
++        "ascend_host_max_aicore_util_pct": ascend_devices_summary.get("host_max_aicore_util_pct"),
++        "ascend_peak_hbm_used_bytes": ascend_devices_summary.get("target_peak_hbm_used_bytes"),
++        "ascend_max_aicore_util_pct": ascend_devices_summary.get("target_max_aicore_util_pct"),
+         "vllm_status": vllm.get("status"),
+         "vllm_sample_count": vllm.get("sample_count"),
+         "vllm_metric_count_last": vllm.get("metric_count_last"),
+@@ -110,8 +145,8 @@ def build_perf_summary(
+         "kv_cache_usage_ratio_max": kv_cache.get("kv_cache_usage_ratio_max"),
+         "kv_cache_usage_quality": kv_cache.get("kv_cache_usage_quality"),
+     }
+-    if p2_events is not None:
+-        row.update(flatten_p2_summary(read_jsonl_events(p2_events), p2_attribution_quality=p2_attribution_quality))
++    row.update(token_fields)
++    row.update(p2_summary)
+     return row
+ 
+ 
+@@ -155,6 +190,7 @@ def flatten_p2_summary(events: list[dict[str, Any]], *, p2_attribution_quality:
+                 "first_scheduled_ns",
+                 "finished_ns",
+                 "prompt_tokens",
++                "cached_prompt_tokens",
+                 "generation_tokens",
+                 "preemption_count",
+             ):
+@@ -198,6 +234,7 @@ def flatten_p2_summary(events: list[dict[str, Any]], *, p2_attribution_quality:
+             [ns_delta_ms(row.get("received_ns"), row.get("finished_ns")) for row in rows]
+         ),
+         "p2_prompt_tokens_total": sum_numeric(row.get("prompt_tokens") for row in rows),
++        "p2_cached_prompt_tokens_total": sum_numeric(row.get("cached_prompt_tokens") for row in rows),
+         "p2_generation_tokens_total": sum_numeric(row.get("generation_tokens") for row in rows),
+         "p2_preemption_count_total": sum_numeric(row.get("preemption_count") for row in rows),
+         "p2_kv_usage_peak": max(kv_usage_values) if kv_usage_values else None,
+@@ -206,6 +243,53 @@ def flatten_p2_summary(events: list[dict[str, Any]], *, p2_attribution_quality:
+     }
+ 
+ 
++def resolve_agent_token_fields(
++    agent: dict[str, Any],
++    p2_summary: dict[str, Any],
++    *,
++    p2_service_exclusive: bool,
++) -> dict[str, Any]:
++    prompt = numeric_or_none(agent.get("prompt_tokens"))
++    completion = numeric_or_none(agent.get("completion_tokens"))
++    cached = numeric_or_none(agent.get("cached_tokens"))
++    if prompt is not None or completion is not None or cached is not None:
++        return {
++            "agent_prompt_tokens": prompt,
++            "agent_completion_tokens": completion,
++            "agent_cached_tokens": cached,
++            "agent_token_source": agent.get("token_source") or "trajectory",
++            "agent_token_quality": agent.get("token_quality") or "exact",
++            "agent_token_missing_reason": agent.get("token_missing_reason"),
++        }
++
++    p2_prompt = numeric_or_none(p2_summary.get("p2_prompt_tokens_total"))
++    p2_completion = numeric_or_none(p2_summary.get("p2_generation_tokens_total"))
++    p2_cached = numeric_or_none(p2_summary.get("p2_cached_prompt_tokens_total"))
++    if p2_service_exclusive and (p2_prompt is not None or p2_completion is not None or p2_cached is not None):
++        return {
++            "agent_prompt_tokens": p2_prompt,
++            "agent_completion_tokens": p2_completion,
++            "agent_cached_tokens": p2_cached,
++            "agent_token_source": "p2_service_exclusive",
++            "agent_token_quality": "inferred_service_exclusive",
++            "agent_token_missing_reason": None,
++        }
++
++    missing_reasons = ["trajectory_usage_fields_absent", "p1_usage_fields_absent"]
++    if p2_summary:
++        missing_reasons.append("p2_attribution_not_exclusive")
++    else:
++        missing_reasons.append("p2_usage_absent")
++    return {
++        "agent_prompt_tokens": None,
++        "agent_completion_tokens": None,
++        "agent_cached_tokens": None,
++        "agent_token_source": agent.get("token_source") or "unavailable",
++        "agent_token_quality": agent.get("token_quality") or "unavailable",
++        "agent_token_missing_reason": agent.get("token_missing_reason") or ";".join(missing_reasons),
++    }
++
++
+ def format_summary(summary: dict[str, Any], fmt: str) -> str:
+     if fmt == "json":
+         return json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True)
+diff --git a/src/agentmon/adapters/vllm_018/events.py b/src/agentmon/adapters/vllm_018/events.py
+index c4f63b1..66eb729 100644
+--- a/src/agentmon/adapters/vllm_018/events.py
++++ b/src/agentmon/adapters/vllm_018/events.py
+@@ -285,7 +285,12 @@ class VllmP2EventSink:
+         return self._request_event("vllm.request.finished", payload, correlation_quality)
+ 
+     def adapter_capability(self, *, status: str, details: dict[str, Any] | None = None) -> Event:
+-        return self.emit("vllm.adapter.capability", payload={"status": status, "details": details or {}})
++        details = details or {}
++        payload = {"status": status, "details": details}
++        for key in ("visible_devices", "visible_devices_source"):
++            if details.get(key) is not None:
++                payload[key] = details[key]
++        return self.emit("vllm.adapter.capability", payload=payload)
+ 
+     def adapter_error(self, exc: BaseException, *, where: str | None = None) -> Event:
+         payload = exception_fingerprint(exc)
+diff --git a/src/agentmon/adapters/vllm_018/hook.py b/src/agentmon/adapters/vllm_018/hook.py
+index 0526030..301e675 100644
+--- a/src/agentmon/adapters/vllm_018/hook.py
++++ b/src/agentmon/adapters/vllm_018/hook.py
+@@ -10,6 +10,7 @@ from typing import Any, Callable
+ 
+ from .events import VllmP2EventSink, quality_from_correlation
+ from .version import detected_vllm_version, is_supported_vllm_version
++from agentmon.reporting.ascend import visible_devices_from_env
+ 
+ 
+ ENABLE_ENV = "AGENTMON_VLLM_P2_ENABLE"
+@@ -126,6 +127,7 @@ def install(*, sink: VllmP2EventSink | None = None, force: bool = False) -> dict
+             "patched": patched,
+             "skipped": skipped,
+             "hot_path_get_computed_blocks": truthy(os.environ.get(HOT_PATH_ENV)),
++            **visible_devices_from_env(),
+         },
+     )
+     return {"status": status, "detected_vllm_version": version, "patched": patched, "skipped": skipped}
+diff --git a/src/agentmon/reporting/ascend.py b/src/agentmon/reporting/ascend.py
+new file mode 100644
+index 0000000..2cc3f32
+--- /dev/null
++++ b/src/agentmon/reporting/ascend.py
+@@ -0,0 +1,272 @@
++from __future__ import annotations
++
++from pathlib import Path
++import math
++import os
++import re
++from typing import Any, Sequence
++
++
++VISIBLE_DEVICE_ENV_KEYS = ("ASCEND_RT_VISIBLE_DEVICES", "ASCEND_VISIBLE_DEVICES")
++
++
++def summarize_ascend_devices(
++    ascend_report: dict[str, Any],
++    *,
++    target_devices: Sequence[str] | None = None,
++    target_device_source: str = "unavailable",
++    visible_devices_raw: Any = None,
++    mapping_quality: str | None = None,
++) -> dict[str, Any]:
++    devices = as_dict(ascend_report.get("devices"))
++    collected_devices = sorted(devices, key=device_sort_key)
++    host_peak_hbm = peak_device_metric(devices, "peak_hbm_used_bytes")
++    host_max_aicore = peak_device_metric(devices, "max_aicore_util_pct")
++    normalized_targets = normalize_device_ids(target_devices)
++    if normalized_targets:
++        target_rows = {device_id: devices[device_id] for device_id in normalized_targets if device_id in devices}
++        missing_target_devices = [device_id for device_id in normalized_targets if device_id not in devices]
++        target_peak_hbm = peak_device_metric(target_rows, "peak_hbm_used_bytes")
++        target_max_aicore = peak_device_metric(target_rows, "max_aicore_util_pct")
++        if not target_rows:
++            target_status = "unavailable"
++        elif missing_target_devices or target_peak_hbm is None or target_max_aicore is None:
++            target_status = "partial"
++        else:
++            target_status = "complete"
++    else:
++        missing_target_devices = []
++        target_peak_hbm = None
++        target_max_aicore = None
++        target_status = "unavailable"
++    return {
++        "collection_scope": "host",
++        "collected_devices": collected_devices,
++        "visible_devices_raw": visible_devices_raw,
++        "target_devices": normalized_targets,
++        "target_device_source": target_device_source if normalized_targets else "unavailable",
++        "target_device_mapping_quality": mapping_quality or ("unavailable" if not normalized_targets else target_device_source),
++        "target_attribution_status": target_status,
++        "missing_target_devices": missing_target_devices,
++        "host_peak_hbm_used_bytes": host_peak_hbm,
++        "host_max_aicore_util_pct": host_max_aicore,
++        "target_peak_hbm_used_bytes": target_peak_hbm,
++        "target_max_aicore_util_pct": target_max_aicore,
++        "hbm_quality": ascend_report.get("hbm_quality"),
++        "aicore_quality": ascend_report.get("aicore_quality"),
++        "parser_confidence": ascend_report.get("parser_confidence"),
++    }
++
++
++def resolve_ascend_target_devices(
++    *,
++    explicit_devices: Any = None,
++    p2_events: Sequence[dict[str, Any]] | None = None,
++    proc_root: str | Path = "/proc",
++) -> dict[str, Any]:
++    explicit = parse_device_list(explicit_devices)
++    if explicit is not None:
++        return target_resolution(explicit, source="explicit", raw=explicit_devices, mapping_quality="explicit")
++
++    metadata = target_devices_from_p2_metadata(p2_events or [])
++    if metadata is not None:
++        return metadata
++
++    environ = target_devices_from_proc_environ(p2_events or [], proc_root=proc_root)
++    if environ is not None:
++        return environ
++
++    return target_resolution(None, source="unavailable", raw=None, mapping_quality="unavailable")
++
++
++def target_devices_from_p2_metadata(events: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
++    for event in reversed(list(events)):
++        if event.get("source") != "vllm_p2" or event.get("event_type") != "vllm.adapter.capability":
++            continue
++        payload = as_dict(event.get("payload"))
++        candidates = [payload, as_dict(payload.get("details"))]
++        for item in candidates:
++            for key in ("visible_devices", "visible_device_ids"):
++                devices = parse_device_list(item.get(key))
++                if devices is not None:
++                    return target_resolution(
++                        devices,
++                        source="service_metadata",
++                        raw=item.get(key),
++                        mapping_quality="service_metadata",
++                    )
++            for env_key in VISIBLE_DEVICE_ENV_KEYS:
++                devices = parse_device_list(item.get(env_key))
++                if devices is not None:
++                    return target_resolution(
++                        devices,
++                        source="service_metadata",
++                        raw=item.get(env_key),
++                        mapping_quality="service_metadata",
++                    )
++    return None
++
++
++def target_devices_from_proc_environ(
++    events: Sequence[dict[str, Any]],
++    *,
++    proc_root: str | Path = "/proc",
++) -> dict[str, Any] | None:
++    seen: set[int] = set()
++    for event in reversed(list(events)):
++        payload = as_dict(event.get("payload"))
++        pid = integer_or_none(payload.get("source_pid"))
++        starttime = integer_or_none(payload.get("source_starttime_ticks"))
++        if pid is None or pid in seen:
++            continue
++        seen.add(pid)
++        env = read_proc_environ(pid, expected_starttime_ticks=starttime, proc_root=proc_root)
++        if not env:
++            continue
++        for env_key in VISIBLE_DEVICE_ENV_KEYS:
++            devices = parse_device_list(env.get(env_key))
++            if devices is not None:
++                return target_resolution(
++                    devices,
++                    source="proc_environ",
++                    raw=env.get(env_key),
++                    mapping_quality="proc_environ",
++                )
++    return None
++
++
++def read_proc_environ(
++    pid: int,
++    *,
++    expected_starttime_ticks: int | None,
++    proc_root: str | Path = "/proc",
++) -> dict[str, str] | None:
++    root = Path(proc_root)
++    stat_path = root / str(pid) / "stat"
++    environ_path = root / str(pid) / "environ"
++    try:
++        if expected_starttime_ticks is not None:
++            actual_starttime = proc_starttime_ticks(stat_path.read_text(encoding="utf-8", errors="replace"))
++            if actual_starttime != expected_starttime_ticks:
++                return None
++        raw = environ_path.read_bytes()
++    except OSError:
++        return None
++    env: dict[str, str] = {}
++    for item in raw.split(b"\0"):
++        if not item or b"=" not in item:
++            continue
++        key, value = item.split(b"=", 1)
++        env[key.decode("utf-8", errors="replace")] = value.decode("utf-8", errors="replace")
++    return env
++
++
++def proc_starttime_ticks(stat_text: str) -> int | None:
++    end = stat_text.rfind(")")
++    if end == -1:
++        return None
++    fields = stat_text[end + 2 :].split()
++    if len(fields) < 20:
++        return None
++    return integer_or_none(fields[19])
++
++
++def parse_device_list(value: Any) -> list[str] | None:
++    if value is None or value == "":
++        return None
++    if isinstance(value, str):
++        if value.strip().lower() in {"all", "none", "void", "null"}:
++            return None
++        parts = [part.strip() for part in re.split(r"[,\s]+", value) if part.strip()]
++    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
++        parts = [str(part).strip() for part in value if str(part).strip()]
++    else:
++        return None
++    result: list[str] = []
++    for part in parts:
++        if part in {"-1", "NoDevFiles"}:
++            return None
++        if not re.fullmatch(r"\d+", part):
++            continue
++        if part not in result:
++            result.append(part)
++    return result or None
++
++
++def normalize_device_ids(devices: Sequence[str] | None) -> list[str]:
++    if not devices:
++        return []
++    result: list[str] = []
++    for device in devices:
++        value = str(device).strip()
++        if value and value not in result:
++            result.append(value)
++    return result
++
++
++def target_resolution(
++    devices: Sequence[str] | None,
++    *,
++    source: str,
++    raw: Any,
++    mapping_quality: str,
++) -> dict[str, Any]:
++    return {
++        "devices": normalize_device_ids(devices),
++        "source": source,
++        "raw": raw,
++        "mapping_quality": mapping_quality,
++    }
++
++
++def peak_device_metric(devices: dict[str, Any], key: str) -> float | int | None:
++    values: list[float | int] = []
++    for device in devices.values():
++        if not isinstance(device, dict):
++            continue
++        value = numeric_or_none(device.get(key))
++        if value is not None:
++            values.append(value)
++    return max(values) if values else None
++
++
++def visible_devices_from_env(env: dict[str, str] | None = None) -> dict[str, Any]:
++    env = env if env is not None else os.environ
++    for key in VISIBLE_DEVICE_ENV_KEYS:
++        devices = parse_device_list(env.get(key))
++        if devices is not None:
++            return {"visible_devices": devices, "visible_devices_source": key}
++    return {"visible_devices": None, "visible_devices_source": None}
++
++
++def device_sort_key(value: str) -> tuple[int, Any]:
++    if str(value).isdigit():
++        return (0, int(value))
++    return (1, str(value))
++
++
++def numeric_or_none(value: Any) -> float | int | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, (int, float)) and math.isfinite(float(value)):
++        return value
++    return None
++
++
++def integer_or_none(value: Any) -> int | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, int):
++        return value
++    if isinstance(value, str):
++        try:
++            return int(value)
++        except ValueError:
++            return None
++    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
++        return int(value)
++    return None
++
++
++def as_dict(value: Any) -> dict[str, Any]:
++    return value if isinstance(value, dict) else {}
+diff --git a/src/agentmon/reporting/report.py b/src/agentmon/reporting/report.py
+index 010d8be..acfdf22 100644
+--- a/src/agentmon/reporting/report.py
++++ b/src/agentmon/reporting/report.py
+@@ -9,6 +9,7 @@ from typing import Any
+ 
+ from agentmon.events import safe_json_dumps
+ from agentmon.paths import open_private_text, write_private_text
++from agentmon.reporting.ascend import summarize_ascend_devices
+ 
+ 
+ def load_events(run_dir: str | Path) -> list[dict[str, Any]]:
+@@ -218,6 +219,12 @@ def summarize_trajectory_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+             break
+ 
+     p1_usage = summarize_p1_model_usage(events)
++    trajectory_usage = {
++        "prompt_tokens": integer_or_none(summary.get("prompt_tokens")),
++        "completion_tokens": integer_or_none(summary.get("completion_tokens")),
++        "cached_tokens": integer_or_none(summary.get("cached_tokens")),
++    }
++    has_trajectory_usage = any(value is not None for value in trajectory_usage.values())
+     if p1_usage:
+         filled = False
+         for target_key, usage_key in (
+@@ -230,8 +237,22 @@ def summarize_trajectory_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+                 filled = True
+         if filled:
+             summary["token_source"] = "p1_model_request"
+-    elif any(summary.get(key) is not None for key in ("prompt_tokens", "completion_tokens", "cached_tokens")):
++            summary["token_quality"] = "exact"
++        elif has_trajectory_usage:
++            summary.setdefault("token_source", "trajectory")
++            summary.setdefault("token_quality", token_quality_from_sources(trajectory_usage, p1_usage))
++            if summary["token_quality"] == "inconsistent":
++                summary["token_count_difference"] = token_count_difference(trajectory_usage, p1_usage)
++    elif has_trajectory_usage:
+         summary.setdefault("token_source", "trajectory")
++        summary.setdefault("token_quality", "exact")
++    else:
++        summary.setdefault("token_source", "unavailable")
++        summary.setdefault("token_quality", "unavailable")
++        summary.setdefault(
++            "token_missing_reason",
++            "trajectory_usage_fields_absent;p1_usage_fields_absent;p2_attribution_not_exclusive",
++        )
+     return summary
+ 
+ 
+@@ -267,6 +288,28 @@ def summarize_p1_model_usage(events: list[dict[str, Any]]) -> dict[str, int] | N
+     return totals if saw_usage else None
+ 
+ 
++def token_quality_from_sources(primary: dict[str, int | None], secondary: dict[str, int | None]) -> str:
++    compared = False
++    for key, primary_value in primary.items():
++        secondary_value = secondary.get(key)
++        if primary_value is None or secondary_value is None:
++            continue
++        compared = True
++        if primary_value != secondary_value:
++            return "inconsistent"
++    return "exact" if compared else "exact"
++
++
++def token_count_difference(primary: dict[str, int | None], secondary: dict[str, int | None]) -> dict[str, int]:
++    diff: dict[str, int] = {}
++    for key, primary_value in primary.items():
++        secondary_value = secondary.get(key)
++        if primary_value is None or secondary_value is None:
++            continue
++        diff[key] = primary_value - secondary_value
++    return diff
++
++
+ def summarize_p1_spans(
+     events: list[dict[str, Any]],
+     *,
+@@ -611,6 +654,7 @@ def summarize_vllm_p2_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+         "request_count": len(request_rows),
+         "adapter_error_count": adapter_errors,
+         "capability_count": len(capabilities),
++        "capabilities": capabilities[:20],
+         "correlation": correlation_counts,
+         "latency": summarize_p2_request_latencies(request_values),
+         "tokens": summarize_p2_request_tokens(request_values),
+@@ -973,7 +1017,7 @@ def summarize_ascend_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+     hbm_quality = "sampled" if hbm_sample_count else "unavailable"
+     aicore_quality = "sampled" if aicore_sample_count else "unavailable"
+     status = "complete" if devices and hbm_sample_count and aicore_sample_count else "partial"
+-    return {
++    result = {
+         "status": status,
+         "sample_count": len(samples),
+         "parser_confidence": parser_confidence,
+@@ -983,6 +1027,8 @@ def summarize_ascend_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+         "aicore_sample_count": aicore_sample_count,
+         "devices": devices,
+     }
++    result["device_summary"] = summarize_ascend_devices(result)
++    return result
+ 
+ 
+ def integer_or_none(value: Any) -> int | None:
+diff --git a/src/agentmon/reporting/summary.py b/src/agentmon/reporting/summary.py
+index 575213b..97a578a 100644
+--- a/src/agentmon/reporting/summary.py
++++ b/src/agentmon/reporting/summary.py
+@@ -7,6 +7,8 @@ import math
+ from pathlib import Path
+ from typing import Any, Iterable
+ 
++from agentmon.reporting.ascend import resolve_ascend_target_devices, summarize_ascend_devices
++
+ 
+ SUMMARY_SCHEMA_VERSION = "1.0"
+ AGGREGATE_SCHEMA_VERSION = "1.0"
+@@ -25,6 +27,7 @@ SUMMARY_FIELDS = [
+     "data_quality_status",
+     "api_calls",
+     "assistant_turns",
++    "p1_status",
+     "agent_steps",
+     "model_requests",
+     "tool_calls",
+@@ -38,6 +41,8 @@ SUMMARY_FIELDS = [
+     "generation_tokens",
+     "cached_tokens",
+     "token_source",
++    "token_quality",
++    "token_missing_reason",
+     "instance_cost",
+     "model_latency.total",
+     "model_latency.mean",
+@@ -59,6 +64,8 @@ SUMMARY_FIELDS = [
+     "negative_durations",
+     "peak_pss_bytes",
+     "peak_rss_bytes",
++    "proc_agent_process_count_max",
++    "proc_agent_process_count_active_last",
+     "kv_cache_usage_ratio_max",
+     "prefix_cache_status",
+     "prefix_cache_hit_rate",
+@@ -103,6 +110,14 @@ SUMMARY_FIELDS = [
+     "p2_npu_attribution_quality_counts",
+     "npu_peak_hbm_bytes",
+     "npu_max_aicore_util_pct",
++    "npu_host_peak_hbm_bytes",
++    "npu_host_max_aicore_util_pct",
++    "npu_collection_scope",
++    "npu_collected_devices",
++    "npu_target_devices",
++    "npu_target_attribution_status",
++    "npu_target_device_source",
++    "npu_target_device_mapping_quality",
+     "npu_parser_confidence",
+     "npu_quality",
+     "npu_hbm_quality",
+@@ -203,7 +218,14 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+     command_nonzero_count = count_nonzero_commands(tool_attr)
+     instrumentation_error_count = count_instrumentation_errors(report)
+     submission_control_flow_count = count_submission_control_flow(report)
+-    npu_peak_hbm, npu_max_aicore = summarize_npu_devices(ascend)
++    target_resolution = resolve_ascend_target_devices(p2_events=capability_events_from_report(vllm_p2))
++    npu_devices = summarize_ascend_devices(
++        ascend,
++        target_devices=target_resolution["devices"],
++        target_device_source=target_resolution["source"],
++        visible_devices_raw=target_resolution["raw"],
++        mapping_quality=target_resolution["mapping_quality"],
++    )
+     prefix_status = none_if_unavailable(kv_cache.get("prefix_cache_status"))
+     prefix_hit_rate = numeric_or_none(kv_cache.get("prefix_cache_hit_rate"))
+     prefix_hit_quality = none_if_unavailable(kv_cache.get("prefix_cache_hit_rate_quality"))
+@@ -217,6 +239,22 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+     run_status = report.get("status") or manifest.get("status")
+     exit_code = report.get("exit_code") if report.get("exit_code") is not None else manifest.get("exit_code")
+     agent_exit_status = agent.get("exit_status")
++    agent_prompt_tokens = numeric_or_none(agent.get("prompt_tokens"))
++    agent_generation_tokens = numeric_or_none(agent.get("completion_tokens"))
++    agent_cached_tokens = numeric_or_none(agent.get("cached_tokens"))
++    agent_token_source = agent.get("token_source")
++    agent_token_quality = agent.get("token_quality")
++    agent_token_missing_reason = agent.get("token_missing_reason")
++    if not any(value is not None for value in (agent_prompt_tokens, agent_generation_tokens, agent_cached_tokens)):
++        agent_token_source = agent_token_source or "unavailable"
++        agent_token_quality = agent_token_quality or "unavailable"
++        agent_token_missing_reason = (
++            agent_token_missing_reason
++            or "trajectory_usage_fields_absent;p1_usage_fields_absent;p2_attribution_not_exclusive"
++        )
++    elif not agent_token_source:
++        agent_token_source = "unknown"
++        agent_token_quality = agent_token_quality or "unavailable"
+ 
+     summary = {
+         "schema_version": SUMMARY_SCHEMA_VERSION,
+@@ -233,6 +271,7 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "data_quality": as_dict(report.get("data_quality")),
+         "api_calls": numeric_or_none(agent.get("api_calls")),
+         "assistant_turns": numeric_or_none(agent.get("assistant_turns")),
++        "p1_status": p1.get("status"),
+         "agent_steps": numeric_or_none(p1.get("agent_steps")),
+         "model_requests": numeric_or_none(p1.get("model_requests")),
+         "tool_calls": numeric_or_none(p1.get("tool_calls")),
+@@ -242,10 +281,12 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "submission_control_flow_count": submission_control_flow_count,
+         "tool_error_count": tool_error_count,
+         "command_nonzero_return_count": command_nonzero_count,
+-        "prompt_tokens": numeric_or_none(agent.get("prompt_tokens")),
+-        "generation_tokens": numeric_or_none(agent.get("completion_tokens")),
+-        "cached_tokens": numeric_or_none(agent.get("cached_tokens")),
+-        "token_source": agent.get("token_source"),
++        "prompt_tokens": agent_prompt_tokens,
++        "generation_tokens": agent_generation_tokens,
++        "cached_tokens": agent_cached_tokens,
++        "token_source": agent_token_source,
++        "token_quality": agent_token_quality,
++        "token_missing_reason": agent_token_missing_reason,
+         "instance_cost": numeric_or_none(agent.get("instance_cost")),
+         "model_latency": latency_stats(model_durations),
+         "tool_latency": latency_stats(tool_durations),
+@@ -259,6 +300,8 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "negative_durations": numeric_or_none(p1.get("negative_duration_count")),
+         "peak_pss_bytes": numeric_or_none(proc.get("agent_peak_pss_bytes")),
+         "peak_rss_bytes": numeric_or_none(proc.get("agent_peak_rss_bytes")),
++        "proc_agent_process_count_max": numeric_or_none(proc.get("agent_process_count_max")),
++        "proc_agent_process_count_active_last": numeric_or_none(proc.get("agent_process_count_active_last")),
+         "kv_cache_usage_ratio_max": numeric_or_none(kv_cache.get("kv_cache_usage_ratio_max")),
+         "prefix_cache_status": prefix_status,
+         "prefix_cache_hit_rate": None if prefix_status == "disabled" else prefix_hit_rate,
+@@ -291,8 +334,16 @@ def build_run_summary(report: dict[str, Any]) -> dict[str, Any]:
+         "p2_kv_pool_bytes_per_rank": p2_metric(p2_kv_pool, "allocated_pool_bytes_per_rank", p2_status),
+         "p2_kv_pool_quality": None if p2_status == "missing" else p2_kv_pool.get("source_quality"),
+         "p2_npu_attribution_quality_counts": as_dict(p2_npu.get("quality_counts")) if p2_status != "missing" else {},
+-        "npu_peak_hbm_bytes": npu_peak_hbm,
+-        "npu_max_aicore_util_pct": npu_max_aicore,
++        "npu_peak_hbm_bytes": npu_devices.get("target_peak_hbm_used_bytes"),
++        "npu_max_aicore_util_pct": npu_devices.get("target_max_aicore_util_pct"),
++        "npu_host_peak_hbm_bytes": npu_devices.get("host_peak_hbm_used_bytes"),
++        "npu_host_max_aicore_util_pct": npu_devices.get("host_max_aicore_util_pct"),
++        "npu_collection_scope": npu_devices.get("collection_scope"),
++        "npu_collected_devices": npu_devices.get("collected_devices"),
++        "npu_target_devices": npu_devices.get("target_devices"),
++        "npu_target_attribution_status": npu_devices.get("target_attribution_status"),
++        "npu_target_device_source": npu_devices.get("target_device_source"),
++        "npu_target_device_mapping_quality": npu_devices.get("target_device_mapping_quality"),
+         "npu_parser_confidence": numeric_or_none(ascend.get("parser_confidence")),
+         "npu_quality": ascend.get("status"),
+         "npu_hbm_quality": ascend.get("hbm_quality"),
+@@ -690,6 +741,15 @@ def summarize_npu_devices(ascend: dict[str, Any]) -> tuple[int | None, float | N
+     return (max(hbm_values) if hbm_values else None, max(aicore_values) if aicore_values else None)
+ 
+ 
++def capability_events_from_report(vllm_p2: dict[str, Any]) -> list[dict[str, Any]]:
++    events: list[dict[str, Any]] = []
++    for payload in vllm_p2.get("capabilities") or []:
++        if not isinstance(payload, dict):
++            continue
++        events.append({"source": "vllm_p2", "event_type": "vllm.adapter.capability", "payload": payload})
++    return events
++
++
+ def summarize_data_quality_status(data_quality: dict[str, Any]) -> str:
+     if not data_quality:
+         return "missing"
+diff --git a/src/agentmon/trajectory/mini_swe.py b/src/agentmon/trajectory/mini_swe.py
+index bd2e972..4b791c2 100644
+--- a/src/agentmon/trajectory/mini_swe.py
++++ b/src/agentmon/trajectory/mini_swe.py
+@@ -76,7 +76,9 @@ def summarize_trajectory(data: dict[str, Any]) -> dict[str, Any]:
+     prompt_tokens = 0
+     completion_tokens = 0
+     cached_tokens = 0
+-    saw_tokens = False
++    saw_prompt_tokens = False
++    saw_completion_tokens = False
++    saw_cached_tokens = False
+     if isinstance(messages, list):
+         for message in messages:
+             if not isinstance(message, dict):
+@@ -86,18 +88,68 @@ def summarize_trajectory(data: dict[str, Any]) -> dict[str, Any]:
+             tool_calls = message.get("tool_calls") or message.get("actions") or []
+             if isinstance(tool_calls, list):
+                 summary["tool_calls"] += len(tool_calls)
+-            extra = message.get("extra") or {}
+-            usage = extra.get("usage") if isinstance(extra, dict) else None
++            usage = usage_from_message(message)
+             if isinstance(usage, dict):
+-                saw_tokens = True
+-                prompt_tokens += int(usage.get("prompt_tokens") or 0)
+-                completion_tokens += int(usage.get("completion_tokens") or 0)
+-                cached_tokens += int(usage.get("cached_tokens") or usage.get("prompt_tokens_details", {}).get("cached_tokens", 0) or 0)
++                prompt = usage_int(usage, "prompt_tokens", "input_tokens")
++                completion = usage_int(usage, "completion_tokens", "generation_tokens", "output_tokens")
++                cached = cached_tokens_from_usage(usage)
++                if prompt is not None:
++                    saw_prompt_tokens = True
++                    prompt_tokens += prompt
++                if completion is not None:
++                    saw_completion_tokens = True
++                    completion_tokens += completion
++                if cached is not None:
++                    saw_cached_tokens = True
++                    cached_tokens += cached
+             returncode = message.get("returncode")
+             if isinstance(returncode, int) and returncode != 0:
+                 summary["tool_failures"] += 1
+-    if saw_tokens:
++    if saw_prompt_tokens:
+         summary["prompt_tokens"] = prompt_tokens
++    if saw_completion_tokens:
+         summary["completion_tokens"] = completion_tokens
++    if saw_cached_tokens:
+         summary["cached_tokens"] = cached_tokens
+     return summary
++
++
++def usage_from_message(message: dict[str, Any]) -> dict[str, Any] | None:
++    extra = message.get("extra")
++    candidates: list[Any] = []
++    if isinstance(extra, dict):
++        candidates.append(extra.get("usage"))
++        response = extra.get("response")
++        if isinstance(response, dict):
++            candidates.append(response.get("usage"))
++    response = message.get("response")
++    if isinstance(response, dict):
++        candidates.append(response.get("usage"))
++    candidates.append(message.get("usage"))
++    candidates.append(message.get("model_usage"))
++    for candidate in candidates:
++        if isinstance(candidate, dict):
++            return candidate
++    return None
++
++
++def usage_int(usage: dict[str, Any], *keys: str) -> int | None:
++    for key in keys:
++        value = usage.get(key)
++        if isinstance(value, bool) or value is None:
++            continue
++        if isinstance(value, int):
++            return value
++        if isinstance(value, float) and value.is_integer():
++            return int(value)
++    return None
++
++
++def cached_tokens_from_usage(usage: dict[str, Any]) -> int | None:
++    direct = usage_int(usage, "cached_tokens", "cached_prompt_tokens")
++    if direct is not None:
++        return direct
++    details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
++    if isinstance(details, dict):
++        return usage_int(details, "cached_tokens", "cache_read_tokens")
++    return None
+diff --git a/tests/unit/test_ascend_attribution.py b/tests/unit/test_ascend_attribution.py
+new file mode 100644
+index 0000000..5a1bd64
+--- /dev/null
++++ b/tests/unit/test_ascend_attribution.py
+@@ -0,0 +1,116 @@
++import tempfile
++import unittest
++from pathlib import Path
++
++from agentmon.reporting.ascend import resolve_ascend_target_devices, summarize_ascend_devices
++
++
++GIB = 1024**3
++
++
++class AscendAttributionTests(unittest.TestCase):
++    def test_target_devices_do_not_mix_host_wide_aicore(self) -> None:
++        ascend = make_ascend_report()
++
++        summary = summarize_ascend_devices(
++            ascend,
++            target_devices=["0", "1", "2", "3"],
++            target_device_source="explicit",
++            mapping_quality="explicit",
++        )
++
++        self.assertEqual(summary["target_peak_hbm_used_bytes"], 60 * GIB)
++        self.assertEqual(summary["target_max_aicore_util_pct"], 2.0)
++        self.assertEqual(summary["host_peak_hbm_used_bytes"], 60 * GIB)
++        self.assertEqual(summary["host_max_aicore_util_pct"], 65.0)
++        self.assertEqual(summary["target_attribution_status"], "complete")
++
++    def test_missing_target_devices_do_not_fall_back_to_host_wide(self) -> None:
++        summary = summarize_ascend_devices(make_ascend_report())
++
++        self.assertEqual(summary["host_peak_hbm_used_bytes"], 60 * GIB)
++        self.assertEqual(summary["host_max_aicore_util_pct"], 65.0)
++        self.assertIsNone(summary["target_peak_hbm_used_bytes"])
++        self.assertIsNone(summary["target_max_aicore_util_pct"])
++        self.assertEqual(summary["target_attribution_status"], "unavailable")
++
++    def test_explicit_devices_take_priority_over_metadata_and_proc_environ(self) -> None:
++        events = [
++            capability_event({"visible_devices": ["4", "5"]}),
++            p2_event_with_pid(pid=1234, starttime=99),
++        ]
++
++        resolved = resolve_ascend_target_devices(explicit_devices="0,1,2,3", p2_events=events)
++
++        self.assertEqual(resolved["devices"], ["0", "1", "2", "3"])
++        self.assertEqual(resolved["source"], "explicit")
++        self.assertEqual(resolved["mapping_quality"], "explicit")
++
++    def test_p2_capability_metadata_resolves_target_devices(self) -> None:
++        resolved = resolve_ascend_target_devices(
++            p2_events=[capability_event({"visible_devices": ["0", "1", "2", "3"]})]
++        )
++
++        self.assertEqual(resolved["devices"], ["0", "1", "2", "3"])
++        self.assertEqual(resolved["source"], "service_metadata")
++
++    def test_proc_environ_starttime_mismatch_is_not_used(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            proc_root = Path(tmp)
++            proc_dir = proc_root / "1234"
++            proc_dir.mkdir()
++            proc_dir.joinpath("stat").write_text("1234 (python) S " + " ".join(["0"] * 18 + ["88"]), encoding="utf-8")
++            proc_dir.joinpath("environ").write_bytes(b"ASCEND_RT_VISIBLE_DEVICES=0,1,2,3\0")
++
++            resolved = resolve_ascend_target_devices(
++                p2_events=[p2_event_with_pid(pid=1234, starttime=99)],
++                proc_root=proc_root,
++            )
++
++        self.assertEqual(resolved["devices"], [])
++        self.assertEqual(resolved["source"], "unavailable")
++
++    def test_proc_environ_matching_starttime_resolves_devices(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            proc_root = Path(tmp)
++            proc_dir = proc_root / "1234"
++            proc_dir.mkdir()
++            proc_dir.joinpath("stat").write_text("1234 (python) S " + " ".join(["0"] * 18 + ["99"]), encoding="utf-8")
++            proc_dir.joinpath("environ").write_bytes(b"ASCEND_RT_VISIBLE_DEVICES=0,1,2,3\0")
++
++            resolved = resolve_ascend_target_devices(
++                p2_events=[p2_event_with_pid(pid=1234, starttime=99)],
++                proc_root=proc_root,
++            )
++
++        self.assertEqual(resolved["devices"], ["0", "1", "2", "3"])
++        self.assertEqual(resolved["source"], "proc_environ")
++
++
++def make_ascend_report() -> dict:
++    return {
++        "status": "complete",
++        "parser_confidence": 0.6,
++        "hbm_quality": "sampled",
++        "aicore_quality": "sampled",
++        "devices": {
++            "0": {"peak_hbm_used_bytes": 60 * GIB, "max_aicore_util_pct": 2.0},
++            "1": {"peak_hbm_used_bytes": 60 * GIB, "max_aicore_util_pct": 2.0},
++            "2": {"peak_hbm_used_bytes": 60 * GIB, "max_aicore_util_pct": 2.0},
++            "3": {"peak_hbm_used_bytes": 60 * GIB, "max_aicore_util_pct": 2.0},
++            "4": {"peak_hbm_used_bytes": 40 * GIB, "max_aicore_util_pct": 65.0},
++            "5": {"peak_hbm_used_bytes": 40 * GIB, "max_aicore_util_pct": 64.0},
++        },
++    }
++
++
++def capability_event(payload: dict) -> dict:
++    return {"source": "vllm_p2", "event_type": "vllm.adapter.capability", "payload": payload}
++
++
++def p2_event_with_pid(*, pid: int, starttime: int) -> dict:
++    return {
++        "source": "vllm_p2",
++        "event_type": "vllm.request.received",
++        "payload": {"source_pid": pid, "source_starttime_ticks": starttime},
++    }
+diff --git a/tests/unit/test_p2_vllm_adapter.py b/tests/unit/test_p2_vllm_adapter.py
+index 18c3be0..c77be3f 100644
+--- a/tests/unit/test_p2_vllm_adapter.py
++++ b/tests/unit/test_p2_vllm_adapter.py
+@@ -462,6 +462,8 @@ class P2VllmAdapterTests(unittest.TestCase):
+         with tempfile.TemporaryDirectory() as tmp:
+             events_path = Path(tmp) / "events.jsonl"
+             sink = VllmP2EventSink(run_id="run-hook", events_path=events_path)
++            old_visible = os.environ.get("ASCEND_RT_VISIBLE_DEVICES")
++            os.environ["ASCEND_RT_VISIBLE_DEVICES"] = "0,1,2,3"
+             try:
+                 result = p2_hook.install(sink=sink, force=True)
+                 self.assertEqual(result["status"], "supported")
+@@ -509,6 +511,10 @@ class P2VllmAdapterTests(unittest.TestCase):
+                 kv = KVCacheManager(enable_caching=False)
+                 self.assertIs(kv.make_prefix_cache_stats(), kv.stats)
+             finally:
++                if old_visible is None:
++                    os.environ.pop("ASCEND_RT_VISIBLE_DEVICES", None)
++                else:
++                    os.environ["ASCEND_RT_VISIBLE_DEVICES"] = old_visible
+                 sink.close()
+                 p2_hook.uninstall_for_tests()
+                 clear_fake_modules(fake_module_names)
+@@ -520,6 +526,10 @@ class P2VllmAdapterTests(unittest.TestCase):
+ 
+         event_types = [row["event_type"] for row in rows]
+         self.assertIn("vllm.adapter.capability", event_types)
++        capability = next(row for row in rows if row["event_type"] == "vllm.adapter.capability")
++        self.assertEqual(capability["payload"]["visible_devices"], ["0", "1", "2", "3"])
++        self.assertEqual(capability["payload"]["visible_devices_source"], "ASCEND_RT_VISIBLE_DEVICES")
++        self.assertEqual(capability["payload"]["details"]["visible_devices"], ["0", "1", "2", "3"])
+         self.assertIn("vllm.request.received", event_types)
+         self.assertIn("vllm.request.finished", event_types)
+         self.assertIn("vllm.request.queued", event_types)
+diff --git a/tests/unit/test_perf_summary.py b/tests/unit/test_perf_summary.py
+index b853c29..8223b17 100644
+--- a/tests/unit/test_perf_summary.py
++++ b/tests/unit/test_perf_summary.py
+@@ -44,8 +44,9 @@ class PerfSummaryTests(unittest.TestCase):
+                         "hbm_quality": "sampled",
+                         "aicore_quality": "sampled",
+                         "devices": {
+-                            "0": {"peak_hbm_used_bytes": 1024, "max_aicore_util_pct": 87.5},
+-                            "1": {"peak_hbm_used_bytes": 2048, "max_aicore_util_pct": 66.0},
++                            "0": {"peak_hbm_used_bytes": 2048, "max_aicore_util_pct": 2.0},
++                            "1": {"peak_hbm_used_bytes": 2048, "max_aicore_util_pct": 2.0},
++                            "4": {"peak_hbm_used_bytes": 1024, "max_aicore_util_pct": 87.5},
+                         },
+                     },
+                     "vllm": {"status": "complete", "sample_count": 2, "counter_deltas": {"x": 1}},
+@@ -57,7 +58,7 @@ class PerfSummaryTests(unittest.TestCase):
+                 },
+             )
+ 
+-            summary = perf_summary.build_perf_summary(run_dir)
++            summary = perf_summary.build_perf_summary(run_dir, ascend_devices="0,1")
+             table = perf_summary.format_summary(summary, "table")
+             csv_text = perf_summary.format_summary(summary, "csv")
+             json_text = perf_summary.format_summary(summary, "json")
+@@ -67,16 +68,54 @@ class PerfSummaryTests(unittest.TestCase):
+         self.assertEqual(summary["proc_agent_process_count_last"], 0)
+         self.assertEqual(summary["proc_agent_process_count_max"], 2)
+         self.assertEqual(summary["proc_agent_process_count_active_last"], 1)
++        self.assertEqual(summary["ascend_target_devices"], ["0", "1"])
++        self.assertEqual(summary["ascend_target_attribution_status"], "complete")
+         self.assertEqual(summary["ascend_peak_hbm_used_bytes"], 2048)
+-        self.assertEqual(summary["ascend_max_aicore_util_pct"], 87.5)
++        self.assertEqual(summary["ascend_max_aicore_util_pct"], 2.0)
++        self.assertEqual(summary["ascend_host_peak_hbm_used_bytes"], 2048)
++        self.assertEqual(summary["ascend_host_max_aicore_util_pct"], 87.5)
+         self.assertEqual(summary["ascend_hbm_quality"], "sampled")
+         self.assertEqual(summary["ascend_aicore_quality"], "sampled")
+         self.assertIsNone(summary["kv_cache_hit_rate"])
+         self.assertIn("proc_agent_peak_pss_bytes | 123", table)
+         self.assertIn("ascend_peak_hbm_used_bytes | 2048", table)
++        self.assertIn("ascend_host_max_aicore_util_pct | 87.5", table)
+         self.assertIn("proc_agent_peak_pss_bytes,123", csv_text)
+         self.assertEqual(json.loads(json_text)["ascend_peak_hbm_used_bytes"], 2048)
+ 
++    def test_perf_summary_without_target_devices_keeps_target_metrics_na(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            write_report(
++                run_dir,
++                {
++                    "run_id": "run-perf",
++                    "status": "success",
++                    "agent": {},
++                    "p1_spans": {},
++                    "proc": {},
++                    "ascend": {
++                        "status": "complete",
++                        "devices": {
++                            "0": {"peak_hbm_used_bytes": 2048, "max_aicore_util_pct": 2.0},
++                            "4": {"peak_hbm_used_bytes": 1024, "max_aicore_util_pct": 87.5},
++                        },
++                    },
++                    "vllm": {},
++                    "kv_cache": {},
++                    "data_quality": {},
++                },
++            )
++
++            summary = perf_summary.build_perf_summary(run_dir)
++            table = perf_summary.format_summary(summary, "table")
++
++        self.assertIsNone(summary["ascend_peak_hbm_used_bytes"])
++        self.assertIsNone(summary["ascend_max_aicore_util_pct"])
++        self.assertEqual(summary["ascend_host_max_aicore_util_pct"], 87.5)
++        self.assertEqual(summary["ascend_target_attribution_status"], "unavailable")
++        self.assertIn("ascend_peak_hbm_used_bytes | N/A", table)
++
+     def test_perf_summary_reads_service_scoped_p2_stream(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+             run_dir = Path(tmp) / "run"
+@@ -102,16 +141,14 @@ class PerfSummaryTests(unittest.TestCase):
+                 [
+                     p2_event("vllm.request.received", {"vllm_request_id": "req-1", "received_ns": 1_000}),
+                     p2_event("vllm.request.queued", {"vllm_request_id": "req-1", "queued_ns": 2_000}),
+-                    p2_event(
+-                        "vllm.request.first_scheduled",
+-                        {"vllm_request_id": "req-1", "first_scheduled_ns": 5_000, "prompt_tokens": 10},
+-                    ),
++                    p2_event("vllm.request.first_scheduled", {"vllm_request_id": "req-1", "first_scheduled_ns": 5_000, "prompt_tokens": 10}),
+                     p2_event(
+                         "vllm.request.finished",
+                         {
+                             "vllm_request_id": "req-1",
+                             "finished_ns": 11_000,
+                             "generation_tokens": 3,
++                            "cached_prompt_tokens": 1,
+                             "preemption_count": 0,
+                         },
+                     ),
+@@ -138,11 +175,49 @@ class PerfSummaryTests(unittest.TestCase):
+         self.assertEqual(summary["p2_attribution_quality"], "service_exclusive")
+         self.assertEqual(summary["p2_request_count"], 1)
+         self.assertEqual(summary["p2_prompt_tokens_total"], 10)
++        self.assertEqual(summary["p2_cached_prompt_tokens_total"], 1)
+         self.assertEqual(summary["p2_generation_tokens_total"], 3)
+         self.assertEqual(summary["p2_kv_usage_peak"], 0.25)
+         self.assertEqual(summary["p2_prefix_cache_status"], "disabled")
+         self.assertIsNone(summary["p2_prefix_cache_hit_rate"])
+         self.assertIn("p2_prefix_cache_hit_rate | N/A", table)
++        self.assertIsNone(summary["agent_prompt_tokens"])
++        self.assertEqual(summary["agent_token_source"], "unavailable")
++        self.assertIn("p2_attribution_not_exclusive", summary["agent_token_missing_reason"])
++
++    def test_perf_summary_p2_service_exclusive_can_backfill_agent_tokens(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp) / "run"
++            run_dir.mkdir()
++            write_report(
++                run_dir,
++                {
++                    "run_id": "run-p2",
++                    "status": "success",
++                    "agent": {"prompt_tokens": None, "completion_tokens": None, "cached_tokens": None},
++                    "p1_spans": {},
++                    "proc": {},
++                    "ascend": {},
++                    "vllm": {},
++                    "kv_cache": {},
++                    "data_quality": {},
++                },
++            )
++            p2_events = Path(tmp) / "p2-events.jsonl"
++            write_jsonl(
++                p2_events,
++                [
++                    p2_event("vllm.request.received", {"vllm_request_id": "req-1", "received_ns": 1_000}),
++                    p2_event("vllm.request.finished", {"vllm_request_id": "req-1", "finished_ns": 2_000, "prompt_tokens": 10, "generation_tokens": 3}),
++                ],
++            )
++
++            summary = perf_summary.build_perf_summary(run_dir, p2_events=p2_events, p2_service_exclusive=True)
++
++        self.assertEqual(summary["agent_prompt_tokens"], 10)
++        self.assertEqual(summary["agent_completion_tokens"], 3)
++        self.assertEqual(summary["agent_token_source"], "p2_service_exclusive")
++        self.assertEqual(summary["agent_token_quality"], "inferred_service_exclusive")
+ 
+ 
+ def write_report(run_dir: Path, report: dict[str, object]) -> None:
+diff --git a/tests/unit/test_report_p1.py b/tests/unit/test_report_p1.py
+index 95e5965..36e60a3 100644
+--- a/tests/unit/test_report_p1.py
++++ b/tests/unit/test_report_p1.py
+@@ -7,9 +7,49 @@ from agentmon.events import Event
+ from agentmon.reporting.report import build_report, read_event_log
+ from agentmon.storage.jsonl import JsonlWriter
+ from agentmon.storage.sqlite import SqliteEventWriter
++from agentmon.trajectory.mini_swe import summarize_trajectory
+ 
+ 
+ class P1ReportTests(unittest.TestCase):
++    def test_mini_swe_trajectory_schema_extracts_response_usage_once(self) -> None:
++        summary = summarize_trajectory(
++            {
++                "trajectory_format": "mini-swe-agent-1.1",
++                "info": {"mini_version": "2.4.3", "exit_status": "Submitted"},
++                "messages": [
++                    {
++                        "role": "assistant",
++                        "extra": {
++                            "response": {
++                                "usage": {
++                                    "prompt_tokens": 10,
++                                    "completion_tokens": 3,
++                                    "prompt_tokens_details": {"cached_tokens": 2},
++                                }
++                            }
++                        },
++                    },
++                    {"role": "assistant", "response": {"usage": {"input_tokens": 5, "output_tokens": 4}}},
++                ],
++            }
++        )
++
++        self.assertEqual(summary["prompt_tokens"], 15)
++        self.assertEqual(summary["completion_tokens"], 7)
++        self.assertEqual(summary["cached_tokens"], 2)
++
++    def test_trajectory_prompt_completion_survive_missing_cached_tokens(self) -> None:
++        summary = summarize_trajectory(
++            {
++                "trajectory_format": "mini-swe-agent-1.1",
++                "messages": [{"role": "assistant", "usage": {"prompt_tokens": 10, "completion_tokens": 3}}],
++            }
++        )
++
++        self.assertEqual(summary["prompt_tokens"], 10)
++        self.assertEqual(summary["completion_tokens"], 3)
++        self.assertIsNone(summary["cached_tokens"])
++
+     def test_event_log_skips_invalid_json_lines(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+             path = Path(tmp) / "events.jsonl"
+@@ -137,6 +177,30 @@ class P1ReportTests(unittest.TestCase):
+         self.assertEqual(report["agent"]["completion_tokens"], 3)
+         self.assertEqual(report["agent"]["cached_tokens"], 2)
+         self.assertEqual(report["agent"]["token_source"], "p1_model_request")
++        self.assertEqual(report["agent"]["token_quality"], "exact")
++
++    def test_agent_summary_marks_missing_token_source_and_reason(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp)
++            (run_dir / "manifest.json").write_text(json.dumps({"run_id": "r", "status": "success"}), encoding="utf-8")
++            event = {
++                "event_id": "1",
++                "run_id": "r",
++                "source": "trajectory",
++                "event_type": "sample",
++                "wall_time_ns": 1,
++                "monotonic_time_ns": 1,
++                "quality": "exact",
++                "payload": {"summary": {"status": "complete", "prompt_tokens": None, "completion_tokens": None}},
++            }
++            (run_dir / "events.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
++
++            report = build_report(run_dir)
++
++        self.assertIsNone(report["agent"]["prompt_tokens"])
++        self.assertEqual(report["agent"]["token_source"], "unavailable")
++        self.assertEqual(report["agent"]["token_quality"], "unavailable")
++        self.assertIn("trajectory_usage_fields_absent", report["agent"]["token_missing_reason"])
+ 
+     def test_proc_summary_keeps_last_max_and_active_last_process_counts(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+diff --git a/tests/unit/test_smoke_check.py b/tests/unit/test_smoke_check.py
+index 64119fd..ab763ee 100644
+--- a/tests/unit/test_smoke_check.py
++++ b/tests/unit/test_smoke_check.py
+@@ -55,6 +55,29 @@ class SmokeCheckTests(unittest.TestCase):
+         self.assertFalse(payload["task_success"])
+         self.assertEqual(payload["issues"], ["final_test_rc"])
+ 
++    def test_smoke_check_report_fallback_populates_quality_criteria(self) -> None:
++        module = load_smoke_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp) / "run-report"
++            run_dir.mkdir()
++            report = make_report(run_id="run-report")
++            report["ascend"]["device_summary"] = {"target_attribution_status": "complete"}
++            (run_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
++
++            exit_code, output = run_script(module, str(run_dir), "--smoke-rc", "0", "--final-test-rc", "0")
++
++        payload = json.loads(output)
++        criteria = payload["criteria"]
++        self.assertEqual(exit_code, 0)
++        self.assertEqual(criteria["trajectory_status"], "complete")
++        self.assertEqual(criteria["p1_status"], "complete")
++        self.assertEqual(criteria["proc_agent_process_count_max"], 1)
++        self.assertEqual(criteria["npu_target_attribution_status"], "complete")
++        self.assertEqual(criteria["token_source"], "trajectory")
++        self.assertEqual(criteria["prefix_cache_status"], "enabled")
++        self.assertEqual(criteria["p2_status"], "complete")
++        self.assertEqual(criteria["p2_request_count"], 2)
++
+ 
+ def run_script(module, *args: str) -> tuple[int, str]:
+     stdout = io.StringIO()
+diff --git a/tests/unit/test_summary.py b/tests/unit/test_summary.py
+index 4960a49..61ddfd6 100644
+--- a/tests/unit/test_summary.py
++++ b/tests/unit/test_summary.py
+@@ -214,6 +214,8 @@ def make_report(
+             "completion_tokens": generation_tokens,
+             "cached_tokens": 7,
+             "token_source": "trajectory" if prompt_tokens is not None or generation_tokens is not None else None,
++            "token_quality": "exact" if prompt_tokens is not None or generation_tokens is not None else "unavailable",
++            "token_missing_reason": None if prompt_tokens is not None or generation_tokens is not None else "trajectory_usage_fields_absent;p1_usage_fields_absent;p2_attribution_not_exclusive",
+             "instance_cost": 0.12,
+         },
+         "event_log": {
+@@ -223,6 +225,7 @@ def make_report(
+             "event_count_mismatch": False,
+         },
+         "p1_spans": {
++            "status": "complete",
+             "agent_steps": 2,
+             "model_requests": 2,
+             "tool_calls": 2,
+@@ -242,7 +245,13 @@ def make_report(
+             "tool_failures": 1,
+             "tools": [{"returncode": 0}, {"returncode": 2}],
+         },
+-        "proc": {"agent_peak_pss_bytes": pss, "agent_peak_rss_bytes": 8192 if pss is not None else None},
++        "proc": {
++            "agent_process_count_last": 0,
++            "agent_process_count_max": 1 if pss is not None else None,
++            "agent_process_count_active_last": 1 if pss is not None else None,
++            "agent_peak_pss_bytes": pss,
++            "agent_peak_rss_bytes": 8192 if pss is not None else None,
++        },
+         "kv_cache": {
+             "prefix_cache_status": prefix_status,
+             "prefix_cache_hit_rate": prefix_hit_rate,
+@@ -262,4 +271,9 @@ def make_report(
+             "aicore_quality": "sampled",
+             "devices": {"0": {"peak_hbm_used_bytes": 123, "max_aicore_util_pct": 80.0}},
+         },
++        "vllm_p2": {
++            "status": "complete",
++            "request_count": 2,
++            "capabilities": [{"visible_devices": ["0"], "visible_devices_source": "test"}],
++        },
+     }

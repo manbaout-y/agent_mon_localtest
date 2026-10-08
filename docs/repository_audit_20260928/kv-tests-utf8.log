@@ -1,0 +1,1283 @@
+........EEEE.............E...EE.EEEEEEEEEEE..EEEEEEF...E................ [ 21%]
+.....................EE...E.....................................EEE..... [ 43%]
+...........EEEE..EE.E.E..E.E..............E..........................E.. [ 64%]
+..........................EEE.EEEEEE.......................EEEEEEEEEEEEE [ 86%]
+EEEEEEEEEE............E.EEEEE.......E.....EE.                            [100%]
+=================================== ERRORS ====================================
+_ ERROR at setup of test_identity_and_zero_selected_are_traced_without_torch __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_external_requires_exact_shape_layer_ratio_rows_and_slot_mapping _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__________ ERROR at setup of test_out_of_scope_layer_is_visible_skip __________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____ ERROR at setup of test_patch_and_restore_use_sha_and_anchor_guards ______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_off_collector_records_nothing_and_writes_nothing ___
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_detail_preserves_positions_and_writer_compresses ___
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_experiment_runner_observability_on_off_preserves_metrics_and_method_hash _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____________ ERROR at setup of test_deepseek_prefix_a_b_pairing ______________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____________ ERROR at setup of test_deepseek_filters_to_c4_layers _____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_deepseek_strict_row_extraction_reads_row_a_and_row_b_separately _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_______ ERROR at setup of test_deepseek_uses_canonical_x_rel_positions ________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____________ ERROR at setup of test_deepseek_anchor_mismatch_fails ____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____________ ERROR at setup of test_deepseek_missing_mapping_fails ____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__________ ERROR at setup of test_deepseek_missing_prefix_side_fails __________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_deepseek_real_query_length_and_start_pos_schema_passes _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___________ ERROR at setup of test_deepseek_start_pos_nonzero_fails ___________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_deepseek_query_length_vector_wrong_length_fails ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__ ERROR at setup of test_deepseek_query_length_hidden_shape_mismatch_fails ___
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____ ERROR at setup of test_q35_uses_actual_layer_id_not_attention_index _____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_________ ERROR at setup of test_qwen_emits_independent_k_and_v_pairs _________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_qwen_preserves_position_offsets_and_relative_position_semantics _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____ ERROR at setup of test_qwen_filename_payload_condition_mismatch_fails ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+______________ ERROR at setup of test_qwen_shape_mismatch_fails _______________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____________ ERROR at setup of test_qwen_x_tokens_mismatch_fails _____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___________ ERROR at setup of test_capsule_enforces_utf8_byte_limit ___________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____ ERROR at setup of test_runner_checkpoint_resume_and_capability_report ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__________ ERROR at setup of test_config_hash_mismatch_refuses_reuse __________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_detector_runs_grouped_and_checkpoints_per_layer ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_snapshot_must_match_request_model_and_context[changes0-model_family] _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_snapshot_must_match_request_model_and_context[changes1-context_version] _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_matching_snapshot_still_passes_without_inventing_runtime_evidence _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_________________ ERROR at setup of test_input_formats[array] _________________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+________________ ERROR at setup of test_input_formats[single] _________________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_______________ ERROR at setup of test_input_formats[container] _______________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_________________ ERROR at setup of test_input_formats[jsonl] _________________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_cli_outputs_are_separated_and_existing_output_protected _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_missing_full_prompt_report_is_partial_not_functional_success _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+________________ ERROR at setup of test_empty_dataset_rejected ________________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_local_tokenizer_is_local_only_and_keeps_special_token_policy _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_state_snapshot_unknown_request_not_silently_attached _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____________ ERROR at setup of test_synthetic_script_end_to_end ______________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_recorder_disabled_no_directory_enabled_json_roundtrip _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_bad_snapshot_binding_is_rejected_before_writing_uninterpretable_tensor_file _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+________ ERROR at setup of test_full_offline_suite_and_npz_interchange ________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_______ ERROR at setup of test_missing_real_inputs_not_reported_as_pass _______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_corrupted_trace_blocks_replay_but_other_offline_checks_continue _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_snapshot_aliases_preserve_arrays_but_not_duplicate_physical_accounting _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_snapshot_quantized_values_not_silently_converted ___
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_snapshot_no_implicit_tensor_or_dtype_conversion ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____ ERROR at setup of test_suite_rejects_cross_condition_split_leakage ______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_suite_empty_trace_and_ambiguous_joins_not_false_pass _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_full_offline_suite_does_not_import_model_frameworks __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+______ ERROR at setup of test_corrupted_npz_is_a_case_level_value_error _______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____ ERROR at setup of test_zero_consumption_cannot_pass_policy_experiment ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__ ERROR at setup of test_empty_or_duplicate_policy_list_rejected[policies0] __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__ ERROR at setup of test_empty_or_duplicate_policy_list_rejected[policies1] __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_______ ERROR at setup of test_bad_policy_retains_other_policy_results ________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____ ERROR at setup of test_bad_artifact_preserves_good_state_comparison _____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+________ ERROR at setup of test_bad_recovery_case_preserves_good_plan _________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___________ ERROR at setup of test_manifest_linkage_is_not_assumed ____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_duplicate_manifest_request_is_not_silently_collapsed _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____ ERROR at setup of test_capsule_hard_limit_checked_before_output[0] ______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____ ERROR at setup of test_capsule_hard_limit_checked_before_output[500] _____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_capsule_hard_limit_checked_before_output[45001] ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____ ERROR at setup of test_capsule_hard_limit_checked_before_output[True] ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___ ERROR at setup of test_capsule_hard_limit_checked_before_output[45000] ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+______ ERROR at setup of test_capsule_utf8_limit_and_evidence_not_hidden ______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_legacy_synthetic_mapping_is_not_reported_as_verified _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_runtime_cost_variant_contract_cannot_report_ready_when_missing _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_state_request_manifest_model_and_context_are_checked[model_family-wrong-model] _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_state_request_manifest_model_and_context_are_checked[context_version-999] _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__ ERROR at setup of test_legacy_context_only_updates_are_visible_as_partial __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__ ERROR at setup of test_v201_aggregation_separates_static_position_binners __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_____ ERROR at setup of test_v201_aggregation_separates_anchor_weighting ______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_v201_aggregation_separates_recursive_composite_config _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_v201_runner_default_policy_rejects_zero_degradation __
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____________ ERROR at setup of test_v2_aggregation_rank_isolation _____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+___________ ERROR at setup of test_v2_aggregation_budget_isolation ____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____________ ERROR at setup of test_v2_aggregation_probe_isolation ____________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+______ ERROR at setup of test_v2_frozen_basis_shared_artifact_single_svd ______
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+____ ERROR at setup of test_v2_pair_oracle_multi_rank_single_decomposition ____
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+__________ ERROR at setup of test_v2_detector_cost_is_not_duplicated __________
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_v2_checkpoint_resume_across_k_v_prefix_position_and_models _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+_ ERROR at setup of test_v2_checkpoint_rejects_changed_dataset_under_same_config _
+
+self = WindowsPath('E:/agentproject/agent_mon-ver_hetero_state/outputs/repository-audit-20260928/kv-utf8-tmp')
+mode = 448, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           self._accessor.mkdir(self, mode)
+E           FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'E:\\agentproject\\agent_mon-ver_hetero_state\\outputs\\repository-audit-20260928\\kv-utf8-tmp'
+
+F:\Anaconda\lib\pathlib.py:1175: FileNotFoundError
+================================== FAILURES ===================================
+__________ test_paper_capability_audit_is_20_unique_and_conservative __________
+
+    def test_paper_capability_audit_is_20_unique_and_conservative() -> None:
+        rows = audit_paper_capabilities(ROOT)
+        assert len(rows) == 20
+        assert len({row["paper_id"] for row in rows}) == 20
+        by_id = {row["paper_id"]: row for row in rows}
+>       assert by_id["14"]["classification"] == "OFFLINE_COMPONENT_EXECUTABLE"
+E       AssertionError: assert 'BLOCKED_SOURCE' == 'OFFLINE_COMPONENT_EXECUTABLE'
+E         - OFFLINE_COMPONENT_EXECUTABLE
+E         + BLOCKED_SOURCE
+
+tests\test_real_offline_pipeline.py:23: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_real_offline_pipeline.py::test_paper_capability_audit_is_20_unique_and_conservative
+ERROR tests/test_dsv4_intervention_precheck.py::test_identity_and_zero_selected_are_traced_without_torch
+ERROR tests/test_dsv4_intervention_precheck.py::test_external_requires_exact_shape_layer_ratio_rows_and_slot_mapping
+ERROR tests/test_dsv4_intervention_precheck.py::test_out_of_scope_layer_is_visible_skip
+ERROR tests/test_dsv4_intervention_precheck.py::test_patch_and_restore_use_sha_and_anchor_guards
+ERROR tests/test_observability_schema_collector.py::test_off_collector_records_nothing_and_writes_nothing
+ERROR tests/test_observability_schema_collector.py::test_detail_preserves_positions_and_writer_compresses
+ERROR tests/test_observability_schema_collector.py::test_experiment_runner_observability_on_off_preserves_metrics_and_method_hash
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_prefix_a_b_pairing
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_filters_to_c4_layers
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_strict_row_extraction_reads_row_a_and_row_b_separately
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_uses_canonical_x_rel_positions
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_anchor_mismatch_fails
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_missing_mapping_fails
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_missing_prefix_side_fails
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_real_query_length_and_start_pos_schema_passes
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_start_pos_nonzero_fails
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_query_length_vector_wrong_length_fails
+ERROR tests/test_real_adapters_deepseek.py::test_deepseek_query_length_hidden_shape_mismatch_fails
+ERROR tests/test_real_adapters_qwen.py::test_q35_uses_actual_layer_id_not_attention_index
+ERROR tests/test_real_adapters_qwen.py::test_qwen_emits_independent_k_and_v_pairs
+ERROR tests/test_real_adapters_qwen.py::test_qwen_preserves_position_offsets_and_relative_position_semantics
+ERROR tests/test_real_adapters_qwen.py::test_qwen_filename_payload_condition_mismatch_fails
+ERROR tests/test_real_adapters_qwen.py::test_qwen_shape_mismatch_fails - File...
+ERROR tests/test_real_adapters_qwen.py::test_qwen_x_tokens_mismatch_fails - F...
+ERROR tests/test_real_offline_pipeline.py::test_capsule_enforces_utf8_byte_limit
+ERROR tests/test_runner_checkpoint.py::test_runner_checkpoint_resume_and_capability_report
+ERROR tests/test_runner_checkpoint.py::test_config_hash_mismatch_refuses_reuse
+ERROR tests/test_selective_detector_anchor.py::test_detector_runs_grouped_and_checkpoints_per_layer
+ERROR tests/test_state_research_batch1_audit.py::test_snapshot_must_match_request_model_and_context[changes0-model_family]
+ERROR tests/test_state_research_batch1_audit.py::test_snapshot_must_match_request_model_and_context[changes1-context_version]
+ERROR tests/test_state_research_batch1_audit.py::test_matching_snapshot_still_passes_without_inventing_runtime_evidence
+ERROR tests/test_state_research_contract.py::test_input_formats[array] - File...
+ERROR tests/test_state_research_contract.py::test_input_formats[single] - Fil...
+ERROR tests/test_state_research_contract.py::test_input_formats[container] - ...
+ERROR tests/test_state_research_contract.py::test_input_formats[jsonl] - File...
+ERROR tests/test_state_research_contract.py::test_cli_outputs_are_separated_and_existing_output_protected
+ERROR tests/test_state_research_contract.py::test_missing_full_prompt_report_is_partial_not_functional_success
+ERROR tests/test_state_research_contract.py::test_empty_dataset_rejected - Fi...
+ERROR tests/test_state_research_contract.py::test_local_tokenizer_is_local_only_and_keeps_special_token_policy
+ERROR tests/test_state_research_contract.py::test_state_snapshot_unknown_request_not_silently_attached
+ERROR tests/test_state_research_contract.py::test_synthetic_script_end_to_end
+ERROR tests/test_state_research_lifecycle.py::test_recorder_disabled_no_directory_enabled_json_roundtrip
+ERROR tests/test_state_research_lifecycle_audit.py::test_bad_snapshot_binding_is_rejected_before_writing_uninterpretable_tensor_file
+ERROR tests/test_state_research_recovery.py::test_full_offline_suite_and_npz_interchange
+ERROR tests/test_state_research_recovery.py::test_missing_real_inputs_not_reported_as_pass
+ERROR tests/test_state_research_recovery.py::test_corrupted_trace_blocks_replay_but_other_offline_checks_continue
+ERROR tests/test_state_research_recovery.py::test_snapshot_aliases_preserve_arrays_but_not_duplicate_physical_accounting
+ERROR tests/test_state_research_recovery.py::test_snapshot_quantized_values_not_silently_converted
+ERROR tests/test_state_research_recovery.py::test_snapshot_no_implicit_tensor_or_dtype_conversion
+ERROR tests/test_state_research_recovery.py::test_suite_rejects_cross_condition_split_leakage
+ERROR tests/test_state_research_recovery.py::test_suite_empty_trace_and_ambiguous_joins_not_false_pass
+ERROR tests/test_state_research_recovery.py::test_full_offline_suite_does_not_import_model_frameworks
+ERROR tests/test_state_research_recovery_audit.py::test_corrupted_npz_is_a_case_level_value_error
+ERROR tests/test_state_research_suite_audit.py::test_zero_consumption_cannot_pass_policy_experiment
+ERROR tests/test_state_research_suite_audit.py::test_empty_or_duplicate_policy_list_rejected[policies0]
+ERROR tests/test_state_research_suite_audit.py::test_empty_or_duplicate_policy_list_rejected[policies1]
+ERROR tests/test_state_research_suite_audit.py::test_bad_policy_retains_other_policy_results
+ERROR tests/test_state_research_suite_audit.py::test_bad_artifact_preserves_good_state_comparison
+ERROR tests/test_state_research_suite_audit.py::test_bad_recovery_case_preserves_good_plan
+ERROR tests/test_state_research_suite_audit.py::test_manifest_linkage_is_not_assumed
+ERROR tests/test_state_research_suite_audit.py::test_duplicate_manifest_request_is_not_silently_collapsed
+ERROR tests/test_state_research_suite_audit.py::test_capsule_hard_limit_checked_before_output[0]
+ERROR tests/test_state_research_suite_audit.py::test_capsule_hard_limit_checked_before_output[500]
+ERROR tests/test_state_research_suite_audit.py::test_capsule_hard_limit_checked_before_output[45001]
+ERROR tests/test_state_research_suite_audit.py::test_capsule_hard_limit_checked_before_output[True]
+ERROR tests/test_state_research_suite_audit.py::test_capsule_hard_limit_checked_before_output[45000]
+ERROR tests/test_state_research_suite_audit.py::test_capsule_utf8_limit_and_evidence_not_hidden
+ERROR tests/test_state_research_suite_audit.py::test_legacy_synthetic_mapping_is_not_reported_as_verified
+ERROR tests/test_state_research_suite_audit.py::test_runtime_cost_variant_contract_cannot_report_ready_when_missing
+ERROR tests/test_state_research_suite_audit.py::test_state_request_manifest_model_and_context_are_checked[model_family-wrong-model]
+ERROR tests/test_state_research_suite_audit.py::test_state_request_manifest_model_and_context_are_checked[context_version-999]
+ERROR tests/test_state_research_suite_audit.py::test_legacy_context_only_updates_are_visible_as_partial
+ERROR tests/test_v201_correctness_patch.py::test_v201_aggregation_separates_static_position_binners
+ERROR tests/test_v201_correctness_patch.py::test_v201_aggregation_separates_anchor_weighting
+ERROR tests/test_v201_correctness_patch.py::test_v201_aggregation_separates_recursive_composite_config
+ERROR tests/test_v201_correctness_patch.py::test_v201_runner_default_policy_rejects_zero_degradation
+ERROR tests/test_v2_regressions.py::test_v2_aggregation_rank_isolation - File...
+ERROR tests/test_v2_regressions.py::test_v2_aggregation_budget_isolation - Fi...
+ERROR tests/test_v2_regressions.py::test_v2_aggregation_probe_isolation - Fil...
+ERROR tests/test_v2_regressions.py::test_v2_frozen_basis_shared_artifact_single_svd
+ERROR tests/test_v2_regressions.py::test_v2_pair_oracle_multi_rank_single_decomposition
+ERROR tests/test_v2_regressions.py::test_v2_detector_cost_is_not_duplicated
+ERROR tests/test_v2_regressions.py::test_v2_checkpoint_resume_across_k_v_prefix_position_and_models
+ERROR tests/test_v2_regressions.py::test_v2_checkpoint_rejects_changed_dataset_under_same_config
+1 failed, 248 passed, 84 errors in 3.23s

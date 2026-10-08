@@ -1,0 +1,1843 @@
+diff --git a/README.md b/README.md
+index 971dabe..8b30366 100644
+--- a/README.md
++++ b/README.md
+@@ -14,2 +14,3 @@ It provides:
+ - `agentmon import-trajectory <path.traj.json>`
++- `agentmon import-p2 <service-events.jsonl> --run-id <run-id>`
+ - `agentmon export <run-id> --format json|csv`
+@@ -28,2 +29,4 @@ validation service.
+ The P2 requirements are tracked separately in `docs/p2_vllm_adapter.md`.
++For the batch-run workflow that imports service-scoped P2 events and produces
++per-step runtime analysis, see `docs/batch_p2_step_sequence_usage.md`.
+ 
+@@ -373,2 +376,30 @@ before treating the directory as a full run for `summary` or `aggregate`.
+ 
++For batch mini-SWE runs, keep the P2 service stream separate and import only the
++byte range produced by one task. Record the service JSONL size before and after
++the task, then append that slice to the AgentMon run and regenerate reports:
++
++```bash
++P2_EVENTS="$AGENTMON_HOME/vllm-p2/events.jsonl"
++P2_START=$(stat -c %s "$P2_EVENTS" 2>/dev/null || echo 0)
++
++"$AGENTMON_PY" -m agentmon run ...   # capture the printed run_id
++
++P2_END=$(stat -c %s "$P2_EVENTS")
++
++"$AGENTMON_PY" -m agentmon import-p2 \
++  --config "$AGENTMON_REPO/examples/config.target.toml" \
++  --run-id "<run-id>" \
++  --start-offset "$P2_START" \
++  --end-offset "$P2_END" \
++  --quality service_exclusive \
++  "$P2_EVENTS"
++```
++
++Use `--quality service_exclusive` only when the validation vLLM endpoint was
++isolated for that task. Otherwise use `service_stream`; the report will still
++include P2 request/KV data, but downstream token backfill should not treat it as
++run-exclusive. If a mini-SWE trajectory is written outside the run directory,
++also run `agentmon import-trajectory --run-id <run-id> <path.traj.json>` and
++regenerate the report after the trajectory exists.
++
+ Because the API process and EngineCore child processes may inherit the same
+@@ -757,2 +788,25 @@ Agent token fields. Host-wide NPU maxima remain available as
+ 
++For per-step runtime analysis, use the step sequence script. It reconstructs
++P1 `agent_step`, `model_request`, and `tool_call` spans, then overlays procfs,
++Ascend, and P2 samples within each span window:
++
++```bash
++PYTHONPATH="$AGENTMON_REPO/src" \
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" \
++  "$AGENTMON_HOME/runs/<run-id>" \
++  --ascend-devices 0,1,2,3 \
++  --format table
++```
++
++JSON/CSV output includes step/model/tool duration, model TTFT/decode/e2e,
++prompt/generation/cached/recomputed token counts, KV usage and prefix-cache
++state, step-level agent CPU time and CPU/wall ratio, tool subprocess CPU/PSS/I/O
++deltas, vLLM process CPU/PSS during model windows, and target/host NPU HBM and
++AI Core utilization windows. `--ascend-devices` is recommended for batch runs;
++without target devices, NPU fields remain host-wide or `N/A` instead of being
++misattributed to the task. After `agentmon import-p2`, the script reads the
++run-local imported P2 events automatically. Use `--p2-events` only for a
++pre-sliced per-run P2 JSONL, not for the full service stream from a multi-task
++batch.
++
+ ## P0 Limits
+diff --git a/docs/batch_p2_step_sequence_usage.md b/docs/batch_p2_step_sequence_usage.md
+new file mode 100644
+index 0000000..b6ef916
+--- /dev/null
++++ b/docs/batch_p2_step_sequence_usage.md
+@@ -0,0 +1,312 @@
++# AgentMon Batch P2 Import and Step Analysis Usage
++
++This guide is for running batch mini-SWE tasks on the Ascend server, importing
++vLLM P2 service events into each AgentMon run, and producing per-step runtime
++analysis.
++
++## 1. Environment
++
++Set these paths first:
++
++```bash
++export AGENTMON_REPO=/data/node0_disk3/chenyang/agentmon-ascend-p1-20260702-src
++export AGENTMON_HOME=/data/node0_disk3/chenyang/agentmon
++export AGENTMON_PY=/data/node0_disk3/chenyang/agent-runtime-poc/envs/agentmon/bin/python
++
++export MINI_SWE_ROOT=/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe
++export MINI_SWE_BIN=/data/node0_disk3/chenyang/agent-runtime-poc/envs/mini-swe-v243/bin/mini
++export TARGET_REPO=/path/to/target/repo
++
++export AGENTMON_CONFIG="$AGENTMON_REPO/examples/config.target.toml"
++export PYTHONPATH="$AGENTMON_REPO/src"
++```
++
++Check AgentMon:
++
++```bash
++"$AGENTMON_PY" -m agentmon --version
++"$AGENTMON_PY" -m agentmon import-p2 --help
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" --help
++```
++
++## 2. P2 Service Events Path
++
++The vLLM service must already be launched with P2 enabled and writing to one
++service-scoped JSONL file:
++
++```bash
++export P2_EVENTS=/path/to/vllm-p2/events.jsonl
++```
++
++For a batch run, do not feed the full service stream directly into analysis.
++Instead, record byte offsets around each task and import only that slice.
++
++## 3. Run One Task
++
++Record the P2 start offset:
++
++```bash
++P2_START=$(stat -c %s "$P2_EVENTS" 2>/dev/null || echo 0)
++```
++
++Run mini-SWE under AgentMon. Keep the trajectory path unique and include
++`{run_id}`:
++
++```bash
++"$AGENTMON_PY" -m agentmon run \
++  --config "$AGENTMON_CONFIG" \
++  --cwd "$TARGET_REPO" \
++  --label calculator-batch \
++  -- "$MINI_SWE_BIN" \
++  -m hosted_vllm/qwen3-coder-30b \
++  -c mini.yaml \
++  -c "$MINI_SWE_ROOT/configs/local_qwen3_coder.yaml" \
++  --agent-class agentmon.adapters.mini_swe.agent.InstrumentedInteractiveAgent \
++  --model-class agentmon.adapters.mini_swe.model.InstrumentedLitellmModel \
++  --environment-class agentmon.adapters.mini_swe.environment.InstrumentedMiniSweLocalEnvironment \
++  -y \
++  -l 0 \
++  --exit-immediately \
++  -t "TASK_TEXT_HERE" \
++  -o "$MINI_SWE_ROOT/trajectories/task-{run_id}.traj.json" \
++  2>&1 | tee /tmp/agentmon-run.log
++```
++
++Extract the run id:
++
++```bash
++RUN_ID=$(sed -n 's/.*agentmon run_id=\([^ ]*\).*/\1/p' /tmp/agentmon-run.log | tail -1)
++echo "$RUN_ID"
++```
++
++Record the P2 end offset:
++
++```bash
++P2_END=$(stat -c %s "$P2_EVENTS")
++```
++
++## 4. Import P2 Slice
++
++Import only the P2 events produced during this task:
++
++```bash
++"$AGENTMON_PY" -m agentmon import-p2 \
++  --config "$AGENTMON_CONFIG" \
++  --run-id "$RUN_ID" \
++  --start-offset "$P2_START" \
++  --end-offset "$P2_END" \
++  --quality service_exclusive \
++  "$P2_EVENTS" \
++  2>&1 | tee "/tmp/agentmon-import-p2-$RUN_ID.log"
++```
++
++Use `--quality service_exclusive` only when the vLLM endpoint had no other
++clients during this task. If the service may contain other traffic, use:
++
++```bash
++--quality service_stream
++```
++
++After import, AgentMon regenerates:
++
++```text
++$AGENTMON_HOME/runs/$RUN_ID/report.json
++$AGENTMON_HOME/runs/$RUN_ID/summary.json
++$AGENTMON_HOME/runs/$RUN_ID/report.txt
++$AGENTMON_HOME/runs/$RUN_ID/report.csv
++```
++
++Check P2 status:
++
++```bash
++"$AGENTMON_PY" -m agentmon summary \
++  --config "$AGENTMON_CONFIG" \
++  "$RUN_ID" \
++  --format json \
++  | "$AGENTMON_PY" -m json.tool \
++  | grep -E '"p2_status"|"p2_request_count"|"p2_direct_correlation_count"'
++```
++
++Expected after a good isolated run:
++
++```text
++"p2_status": "complete"
++"p2_request_count": <non-zero>
++```
++
++## 5. Import mini-SWE Trajectory
++
++If the trajectory was not automatically imported, import it after mini-SWE
++finishes:
++
++```bash
++TRAJ=$(ls -t "$MINI_SWE_ROOT"/trajectories/*"$RUN_ID"*.traj.json | head -1)
++
++"$AGENTMON_PY" -m agentmon import-trajectory \
++  --config "$AGENTMON_CONFIG" \
++  --run-id "$RUN_ID" \
++  "$TRAJ"
++```
++
++This also regenerates reports.
++
++## 6. Per-Step Runtime Analysis
++
++Generate a compact table:
++
++```bash
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" \
++  "$AGENTMON_HOME/runs/$RUN_ID" \
++  --ascend-devices 0,1,2,3 \
++  --format table \
++  | tee "/tmp/agentmon-step-$RUN_ID.txt"
++```
++
++Generate machine-readable JSON:
++
++```bash
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" \
++  "$AGENTMON_HOME/runs/$RUN_ID" \
++  --ascend-devices 0,1,2,3 \
++  --format json \
++  > "/tmp/agentmon-step-$RUN_ID.json"
++```
++
++Generate CSV:
++
++```bash
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" \
++  "$AGENTMON_HOME/runs/$RUN_ID" \
++  --ascend-devices 0,1,2,3 \
++  --format csv \
++  > "/tmp/agentmon-step-$RUN_ID.csv"
++```
++
++The step analysis includes:
++
++- step/model/tool duration
++- model P2 e2e, queue, TTFT, decode time
++- prompt, generation, cached, recomputed tokens
++- KV usage ratio and block alloc/free/evict counts
++- prefix-cache status and hit rate semantics
++- agent-side CPU time and CPU/wall ratio
++- tool subprocess CPU, PSS, RSS, read/write bytes
++- vLLM process CPU/PSS during model windows
++- target and host NPU HBM / AI Core utilization windows
++
++Do not pass the full service-level `$P2_EVENTS` file to `--p2-events` during a
++multi-task batch. Use `agentmon import-p2` first, then analyze the run-local
++events. `--p2-events` is only for a pre-sliced per-run P2 JSONL.
++
++## 7. Minimal Batch Loop Pattern
++
++```bash
++for TASK_FILE in /path/to/tasks/*.txt; do
++  TASK_TEXT=$(cat "$TASK_FILE")
++  P2_START=$(stat -c %s "$P2_EVENTS" 2>/dev/null || echo 0)
++
++  LOG="/tmp/agentmon-run-$(basename "$TASK_FILE").log"
++  "$AGENTMON_PY" -m agentmon run \
++    --config "$AGENTMON_CONFIG" \
++    --cwd "$TARGET_REPO" \
++    --label "batch-$(basename "$TASK_FILE")" \
++    -- "$MINI_SWE_BIN" \
++    -m hosted_vllm/qwen3-coder-30b \
++    -c mini.yaml \
++    -c "$MINI_SWE_ROOT/configs/local_qwen3_coder.yaml" \
++    --agent-class agentmon.adapters.mini_swe.agent.InstrumentedInteractiveAgent \
++    --model-class agentmon.adapters.mini_swe.model.InstrumentedLitellmModel \
++    --environment-class agentmon.adapters.mini_swe.environment.InstrumentedMiniSweLocalEnvironment \
++    -y \
++    -l 0 \
++    --exit-immediately \
++    -t "$TASK_TEXT" \
++    -o "$MINI_SWE_ROOT/trajectories/batch-{run_id}.traj.json" \
++    2>&1 | tee "$LOG"
++
++  RUN_ID=$(sed -n 's/.*agentmon run_id=\([^ ]*\).*/\1/p' "$LOG" | tail -1)
++  P2_END=$(stat -c %s "$P2_EVENTS")
++
++  "$AGENTMON_PY" -m agentmon import-p2 \
++    --config "$AGENTMON_CONFIG" \
++    --run-id "$RUN_ID" \
++    --start-offset "$P2_START" \
++    --end-offset "$P2_END" \
++    --quality service_exclusive \
++    "$P2_EVENTS"
++
++  TRAJ=$(ls -t "$MINI_SWE_ROOT"/trajectories/*"$RUN_ID"*.traj.json 2>/dev/null | head -1 || true)
++  if [ -n "$TRAJ" ]; then
++    "$AGENTMON_PY" -m agentmon import-trajectory \
++      --config "$AGENTMON_CONFIG" \
++      --run-id "$RUN_ID" \
++      "$TRAJ"
++  fi
++
++  "$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" \
++    "$AGENTMON_HOME/runs/$RUN_ID" \
++    --ascend-devices 0,1,2,3 \
++    --format json \
++    > "$AGENTMON_HOME/runs/$RUN_ID/step_sequence.json"
++done
++```
++
++## 8. Common Problems
++
++### `p2_status = missing`
++
++Usually this means the vLLM P2 service events were not imported into the run.
++Run `agentmon import-p2` with the correct offset range and then regenerate or
++read the report again.
++
++### `p2_request_count = 0`
++
++Check:
++
++```bash
++sed -n "${P2_START},${P2_END}p" "$P2_EVENTS"
++```
++
++That command is line-based, not byte-offset based, so it is only for a quick
++manual look. The real import command uses byte offsets.
++
++Also check that the vLLM service was launched with:
++
++```text
++AGENTMON_VLLM_P2_ENABLE=1
++AGENTMON_EVENTS_PATH=<the same P2_EVENTS path>
++PYTHONPATH=$AGENTMON_REPO/src:...
++```
++
++### Step analysis has no P2 fields
++
++Confirm run-local `events.jsonl` contains P2 events:
++
++```bash
++grep -c '"source":"vllm_p2"' "$AGENTMON_HOME/runs/$RUN_ID/events.jsonl"
++```
++
++If the count is zero, import P2 first.
++
++### NPU target metrics are N/A
++
++Pass the physical devices used by the validation vLLM service:
++
++```bash
++--ascend-devices 0,1,2,3
++```
++
++Without target devices, the script avoids pretending host-wide NPU values belong
++to this task.
++
++### Prefix cache disabled
++
++This is expected for the current service if prefix cache is off. Reports should
++show:
++
++```text
++prefix_cache_status = disabled
++prefix_cache_hit_rate = N/A / null
++```
++
++It should not be interpreted as `0%`.
+diff --git a/docs/p2_vllm_adapter.md b/docs/p2_vllm_adapter.md
+index 1e29939..9dc520a 100644
+--- a/docs/p2_vllm_adapter.md
++++ b/docs/p2_vllm_adapter.md
+@@ -264,2 +264,23 @@ status. Do not treat such a directory as a complete run for `summary` or
+ 
++For batch AgentMon runs, import the service stream slice into the completed run
++before generating final reports. A batch runner should record byte offsets from
++the service P2 JSONL immediately before and after each task, then run:
++
++```bash
++"$AGENTMON_PY" -m agentmon import-p2 \
++  --config "$AGENTMON_REPO/examples/config.target.toml" \
++  --run-id "<run-id>" \
++  --start-offset "$P2_START" \
++  --end-offset "$P2_END" \
++  --quality service_exclusive \
++  "$P2_EVENTS"
++```
++
++This appends only `source="vllm_p2"` events from the selected range to the run
++`events.jsonl`, rewrites the top-level run id to the AgentMon run id, preserves
++the original service event id/run id in `_agentmon_p2_import`, and regenerates
++`report.json`, `summary.json`, `report.txt`, and `report.csv`. Use
++`service_exclusive` only for isolated validation endpoints or offset windows
++known to contain no other clients; otherwise use `service_stream`.
++
+ The API process and EngineCore child processes may write the same
+@@ -764,2 +785,20 @@ ids when known:
+ 
++For per-step runtime load analysis, use:
++
++```bash
++"$AGENTMON_PY" "$AGENTMON_REPO/scripts/agentmon_step_sequence.py" \
++  "$RUN_DIR" \
++  --ascend-devices 0,1,2,3 \
++  --format json
++```
++
++The sequence output preserves run-level reports and adds step/model/tool window
++attribution: agent-side CPU time and CPU/wall ratio, tool subprocess CPU/PSS/I/O
++deltas, vLLM process CPU/PSS during model windows, target/host NPU HBM and AI
++Core utilization windows, P2 request latency, token counts, KV usage ratios,
++block allocation/free/eviction counts, and prefix-cache status/hit-rate
++semantics. After `agentmon import-p2`, run-local imported P2 events are used
++automatically. Pass `--p2-events` only for a pre-sliced per-run P2 JSONL; do
++not point it at the full service stream during multi-task batches.
++
+ The runtime hook emits `visible_devices` metadata from
+diff --git a/scripts/agentmon_step_sequence.py b/scripts/agentmon_step_sequence.py
+index 6927a10..05f97d2 100644
+--- a/scripts/agentmon_step_sequence.py
++++ b/scripts/agentmon_step_sequence.py
+@@ -59,2 +59,3 @@ def main(argv: Sequence[str] | None = None) -> int:
+                 p2_events=Path(args.p2_events) if args.p2_events else None,
++                ascend_devices=args.ascend_devices,
+             )
+@@ -80,2 +81,6 @@ def build_parser() -> argparse.ArgumentParser:
+     )
++    parser.add_argument(
++        "--ascend-devices",
++        help="comma-separated npu-smi device ids for target/model attribution; defaults to P2 visible_devices when available",
++    )
+     parser.add_argument("--format", choices=["table", "json", "csv"], default="table")
+@@ -84,3 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
+ 
+-def build_step_sequence(run_dir: Path, *, p2_events: Path | None = None) -> dict[str, Any]:
++def build_step_sequence(
++    run_dir: Path,
++    *,
++    p2_events: Path | None = None,
++    ascend_devices: str | None = None,
++) -> dict[str, Any]:
+     run_event_log = read_jsonl(run_dir / "events.jsonl")
+@@ -91,3 +101,4 @@ def build_step_sequence(run_dir: Path, *, p2_events: Path | None = None) -> dict
+     spans = build_spans(events)
+-    analysis = assemble_sequence(run_dir, events, spans, p2_index)
++    resources = build_resource_context(events, all_p2_events, ascend_devices=ascend_devices)
++    analysis = assemble_sequence(run_dir, events, spans, p2_index, resources)
+     analysis["invalid_json_lines"] = run_event_log["invalid_lines"]
+@@ -210,2 +221,3 @@ def assemble_sequence(
+     p2_index: dict[str, Any],
++    resources: dict[str, Any],
+ ) -> dict[str, Any]:
+@@ -226,3 +238,3 @@ def assemble_sequence(
+             continue
+-        item = make_item(child, p2_index)
++        item = make_item(child, p2_index, resources)
+         steps_by_id[step_id]["items"].append(item)
+@@ -231,3 +243,3 @@ def assemble_sequence(
+     for step in steps:
+-        finalize_step(step)
++        finalize_step(step, resources)
+     steps.sort(key=lambda step: sort_time(step))
+@@ -236,3 +248,3 @@ def assemble_sequence(
+ 
+-    unassigned = [make_item(span, p2_index) for span in child_spans if step_id_for_child(span) is None]
++    unassigned = [make_item(span, p2_index, resources) for span in child_spans if step_id_for_child(span) is None]
+     totals = build_totals(steps, unassigned)
+@@ -247,2 +259,10 @@ def assemble_sequence(
+         "unassigned_items": unassigned,
++        "resource_attribution": {
++            "proc_sample_count": len(resources["proc_events"]),
++            "ascend_sample_count": len(resources["ascend_events"]),
++            "ascend_target_devices": sorted(resources["ascend_target_devices"])
++            if resources["ascend_target_devices"]
++            else None,
++            "ascend_target_device_source": resources["ascend_target_device_source"],
++        },
+         "warnings": build_warnings(steps, unassigned),
+@@ -285,3 +305,3 @@ def synthetic_step(step_id: str) -> dict[str, Any]:
+ 
+-def finalize_step(step: dict[str, Any]) -> None:
++def finalize_step(step: dict[str, Any], resources: dict[str, Any]) -> None:
+     items = step["items"]
+@@ -305,2 +325,21 @@ def finalize_step(step: dict[str, Any]) -> None:
+     step["tool_call_count"] = sum(1 for item in items if item.get("item_type") == "tool")
++    step.update(step_kv_summary(items))
++    step["agent_proc"] = proc_window_summary(
++        resources["proc_events"],
++        step.get("start_mono_ns"),
++        step.get("end_mono_ns"),
++        role="agent",
++    )
++    step["vllm_proc"] = proc_window_summary(
++        resources["proc_events"],
++        step.get("start_mono_ns"),
++        step.get("end_mono_ns"),
++        role="vllm",
++    )
++    step["npu"] = ascend_window_summary(
++        resources["ascend_events"],
++        step.get("start_mono_ns"),
++        step.get("end_mono_ns"),
++        target_devices=resources["ascend_target_devices"],
++    )
+     duration = step.get("duration_s")
+@@ -309,9 +348,9 @@ def finalize_step(step: dict[str, Any]) -> None:
+ 
+-def make_item(span: dict[str, Any], p2_index: dict[str, Any]) -> dict[str, Any]:
++def make_item(span: dict[str, Any], p2_index: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
+     if span.get("span_type") == "model_request":
+-        return make_model_item(span, p2_index)
+-    return make_tool_item(span)
++        return make_model_item(span, p2_index, resources)
++    return make_tool_item(span, resources)
+ 
+ 
+-def make_model_item(span: dict[str, Any], p2_index: dict[str, Any]) -> dict[str, Any]:
++def make_model_item(span: dict[str, Any], p2_index: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
+     start_payload = span["start_payload"]
+@@ -321,2 +360,8 @@ def make_model_item(span: dict[str, Any], p2_index: dict[str, Any]) -> dict[str,
+     p2_row = find_p2_row(span, p2_index)
++    p2_snapshot = nearest_kv_snapshot(
++        p2_index["snapshots"],
++        first_int(p2_row.get("finished_ns"), span.get("end_mono_ns"), span.get("start_mono_ns")),
++    )
++    window_start_ns = first_int(p2_row.get("received_ns"), span.get("start_mono_ns"))
++    window_end_ns = first_int(p2_row.get("finished_ns"), span.get("end_mono_ns"))
+     return {
+@@ -331,3 +376,10 @@ def make_model_item(span: dict[str, Any], p2_index: dict[str, Any]) -> dict[str,
+         "cost": number_or_none(usage.get("cost")),
+-        "p2": p2_projection(p2_row),
++        "p2": p2_projection(p2_row, p2_snapshot),
++        "vllm_proc": proc_window_summary(resources["proc_events"], window_start_ns, window_end_ns, role="vllm"),
++        "npu": ascend_window_summary(
++            resources["ascend_events"],
++            window_start_ns,
++            window_end_ns,
++            target_devices=resources["ascend_target_devices"],
++        ),
+     }
+@@ -335,3 +387,3 @@ def make_model_item(span: dict[str, Any], p2_index: dict[str, Any]) -> dict[str,
+ 
+-def make_tool_item(span: dict[str, Any]) -> dict[str, Any]:
++def make_tool_item(span: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
+     start_payload = span["start_payload"]
+@@ -339,2 +391,4 @@ def make_tool_item(span: dict[str, Any]) -> dict[str, Any]:
+     attributes = span["attributes"]
++    pid = integer_or_none(end_payload.get("pid"))
++    pgid = integer_or_none(end_payload.get("pgid"))
+     return {
+@@ -349,4 +403,4 @@ def make_tool_item(span: dict[str, Any]) -> dict[str, Any]:
+         "timed_out": end_payload.get("timed_out"),
+-        "pid": integer_or_none(end_payload.get("pid")),
+-        "pgid": integer_or_none(end_payload.get("pgid")),
++        "pid": pid,
++        "pgid": pgid,
+         "stdout_bytes": integer_or_none(end_payload.get("stdout_bytes")),
+@@ -355,2 +409,9 @@ def make_tool_item(span: dict[str, Any]) -> dict[str, Any]:
+         "attribution_quality": end_payload.get("attribution_quality"),
++        "proc": proc_window_summary(
++            resources["proc_events"],
++            span.get("start_mono_ns"),
++            span.get("end_mono_ns"),
++            pid=pid,
++            pgid=pgid,
++        ),
+     }
+@@ -382,2 +443,3 @@ def build_p2_index(events: list[dict[str, Any]]) -> dict[str, Any]:
+     rows_by_key: dict[str, dict[str, Any]] = {}
++    snapshots: list[dict[str, Any]] = []
+     for event in events:
+@@ -386,5 +448,8 @@ def build_p2_index(events: list[dict[str, Any]]) -> dict[str, Any]:
+         event_type = str(event.get("event_type") or "")
++        payload = as_dict(event.get("payload"))
++        if event_type == "vllm.kv.snapshot":
++            snapshots.append(kv_snapshot_row(payload, event))
++            continue
+         if not event_type.startswith("vllm.request.") and event_type != "vllm.kv.block_event":
+             continue
+-        payload = as_dict(event.get("payload"))
+         key = p2_row_key(payload)
+@@ -402,3 +467,4 @@ def build_p2_index(events: list[dict[str, Any]]) -> dict[str, Any]:
+                 by_id[str(value)] = row
+-    return {"rows": rows, "by_id": by_id}
++    snapshots.sort(key=lambda row: row.get("monotonic_time_ns") if isinstance(row.get("monotonic_time_ns"), int) else -1)
++    return {"rows": rows, "by_id": by_id, "snapshots": snapshots}
+ 
+@@ -454,5 +520,10 @@ def find_p2_row(span: dict[str, Any], p2_index: dict[str, Any]) -> dict[str, Any
+ 
+-def p2_projection(row: dict[str, Any]) -> dict[str, Any] | None:
++def p2_projection(row: dict[str, Any], snapshot: dict[str, Any] | None = None) -> dict[str, Any] | None:
+     if not row:
+         return None
++    prompt_tokens = integer_or_none(row.get("prompt_tokens"))
++    cached_prompt_tokens = integer_or_none(row.get("cached_prompt_tokens"))
++    recomputed_prompt_tokens = integer_or_none(row.get("recomputed_prompt_tokens"))
++    usage_before = number_or_none(row.get("kv_usage_before"))
++    usage_after = number_or_none(row.get("kv_usage_after"))
+     return {
+@@ -466,5 +537,6 @@ def p2_projection(row: dict[str, Any]) -> dict[str, Any] | None:
+         "decode_s": ns_to_s(ns_delta(row.get("first_token_ns"), row.get("finished_ns"))),
+-        "prompt_tokens": integer_or_none(row.get("prompt_tokens")),
+-        "cached_prompt_tokens": integer_or_none(row.get("cached_prompt_tokens")),
++        "prompt_tokens": prompt_tokens,
++        "cached_prompt_tokens": cached_prompt_tokens,
+         "computed_prefill_tokens": integer_or_none(row.get("computed_prefill_tokens")),
++        "recomputed_prompt_tokens": recomputed_prompt_tokens,
+         "generation_tokens": integer_or_none(row.get("generation_tokens")),
+@@ -472,2 +544,80 @@ def p2_projection(row: dict[str, Any]) -> dict[str, Any] | None:
+         "finish_reason": row.get("finish_reason"),
++        "cache_reuse_rate": ratio_or_none(cached_prompt_tokens, prompt_tokens),
++        "recomputed_prompt_rate": ratio_or_none(recomputed_prompt_tokens, prompt_tokens),
++        "kv_usage_before": usage_before,
++        "kv_usage_after": usage_after,
++        "kv_usage_delta": usage_after - usage_before if usage_before is not None and usage_after is not None else None,
++        "allocated_block_count": integer_or_none(row.get("allocated_block_count")),
++        "freed_block_count": integer_or_none(row.get("freed_block_count")),
++        "evicted_block_count": integer_or_none(row.get("evicted_block_count")),
++        "kv_quality": row.get("kv_quality"),
++        "kv_snapshot": kv_snapshot_projection(snapshot),
++    }
++
++
++def kv_snapshot_row(payload: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
++    row = {
++        "monotonic_time_ns": integer_or_none(event.get("monotonic_time_ns")),
++        "prefix_cache_status": payload.get("prefix_cache_status"),
++        "prefix_cache_queries": integer_or_none(payload.get("prefix_cache_queries")),
++        "prefix_cache_hits": integer_or_none(payload.get("prefix_cache_hits")),
++        "kv_usage_ratio": number_or_none(payload.get("kv_usage_ratio")),
++    }
++    kv_pool = as_dict(payload.get("kv_pool"))
++    if kv_pool:
++        row["kv_pool"] = kv_pool
++    return row
++
++
++def nearest_kv_snapshot(snapshots: list[dict[str, Any]], mono_ns: int | None) -> dict[str, Any] | None:
++    if not snapshots:
++        return None
++    if mono_ns is None:
++        return snapshots[-1]
++    previous = [row for row in snapshots if isinstance(row.get("monotonic_time_ns"), int) and row["monotonic_time_ns"] <= mono_ns]
++    if previous:
++        return previous[-1]
++    return snapshots[0]
++
++
++def kv_snapshot_projection(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
++    if not snapshot:
++        return None
++    queries = integer_or_none(snapshot.get("prefix_cache_queries"))
++    hits = integer_or_none(snapshot.get("prefix_cache_hits"))
++    status = snapshot.get("prefix_cache_status")
++    kv_pool = as_dict(snapshot.get("kv_pool"))
++    return {
++        "prefix_cache_status": status,
++        "prefix_cache_queries": queries,
++        "prefix_cache_hits": hits,
++        "prefix_cache_hit_rate": None if status == "disabled" else ratio_or_none(hits, queries),
++        "kv_usage_ratio": number_or_none(snapshot.get("kv_usage_ratio")),
++        "kv_pool_allocated_bytes_per_rank": integer_or_none(kv_pool.get("allocated_pool_bytes_per_rank")),
++        "kv_pool_bytes_per_block_per_rank": integer_or_none(kv_pool.get("bytes_per_block_per_rank")),
++        "kv_pool_source_quality": kv_pool.get("source_quality"),
++    }
++
++
++def step_kv_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
++    model_items = [item for item in items if item.get("item_type") == "model"]
++    p2_rows = [as_dict(item.get("p2")) for item in model_items if isinstance(item.get("p2"), dict)]
++    prompt_total = sum_present(row.get("prompt_tokens") for row in p2_rows)
++    cached_total = sum_present(row.get("cached_prompt_tokens") for row in p2_rows)
++    recomputed_total = sum_present(row.get("recomputed_prompt_tokens") for row in p2_rows)
++    snapshots = [as_dict(row.get("kv_snapshot")) for row in p2_rows if isinstance(row.get("kv_snapshot"), dict)]
++    latest_snapshot = snapshots[-1] if snapshots else None
++    kv_usage_values = [
++        number_or_none(row.get("kv_usage_after"))
++        for row in p2_rows
++        if number_or_none(row.get("kv_usage_after")) is not None
++    ]
++    return {
++        "kv_cache_prompt_tokens": prompt_total,
++        "kv_cache_cached_prompt_tokens": cached_total,
++        "kv_cache_recomputed_prompt_tokens": recomputed_total,
++        "kv_cache_reuse_rate": ratio_or_none(cached_total, prompt_total),
++        "kv_cache_recomputed_rate": ratio_or_none(recomputed_total, prompt_total),
++        "kv_usage_ratio_after_max": max(kv_usage_values) if kv_usage_values else None,
++        "kv_snapshot": latest_snapshot,
+     }
+@@ -488,2 +638,4 @@ def build_totals(steps: list[dict[str, Any]], unassigned: list[dict[str, Any]])
+         "cached_tokens": sum_present(item.get("cached_tokens") for item in model_items),
++        "kv_cache_reuse_rate_mean": mean_present(step.get("kv_cache_reuse_rate") for step in steps),
++        "kv_usage_ratio_after_max": max_present(step.get("kv_usage_ratio_after_max") for step in steps),
+         "tool_nonzero_return_count": sum(1 for item in tool_items if nonzero(item.get("returncode"))),
+@@ -506,2 +658,260 @@ def build_warnings(steps: list[dict[str, Any]], unassigned: list[dict[str, Any]]
+ 
++def build_resource_context(
++    events: list[dict[str, Any]],
++    p2_events: list[dict[str, Any]],
++    *,
++    ascend_devices: str | None,
++) -> dict[str, Any]:
++    explicit_devices = parse_device_ids(ascend_devices)
++    inferred_devices = infer_p2_visible_devices(p2_events)
++    return {
++        "proc_events": sorted(
++            [event for event in events if event.get("source") == "proc" and event.get("event_type") == "sample"],
++            key=lambda event: integer_or_none(event.get("monotonic_time_ns")) or -1,
++        ),
++        "ascend_events": sorted(
++            [event for event in events if event.get("source") == "ascend" and event.get("event_type") == "sample"],
++            key=lambda event: integer_or_none(event.get("monotonic_time_ns")) or -1,
++        ),
++        "ascend_target_devices": explicit_devices or inferred_devices,
++        "ascend_target_device_source": "cli" if explicit_devices else ("p2_visible_devices" if inferred_devices else "unavailable"),
++    }
++
++
++def proc_window_summary(
++    proc_events: list[dict[str, Any]],
++    start_ns: Any,
++    end_ns: Any,
++    *,
++    role: str | None = None,
++    pid: int | None = None,
++    pgid: int | None = None,
++) -> dict[str, Any]:
++    samples = events_in_window(proc_events, start_ns, end_ns)
++    if not samples:
++        return {"quality": "missing", "sample_count": 0}
++
++    sample_rows: list[dict[str, Any]] = []
++    by_identity: dict[tuple[int, int | None], list[dict[str, Any]]] = {}
++    clk_tck = None
++    for event in samples:
++        payload = as_dict(event.get("payload"))
++        aggregate = as_dict(payload.get("aggregate"))
++        clk_tck = integer_or_none(aggregate.get("clk_tck")) or clk_tck
++        processes = []
++        for process in payload.get("processes") or []:
++            if not isinstance(process, dict) or not proc_process_matches(process, role=role, pid=pid, pgid=pgid):
++                continue
++            processes.append(process)
++            proc_pid = integer_or_none(process.get("pid"))
++            if proc_pid is not None:
++                identity = (proc_pid, integer_or_none(process.get("starttime_ticks")))
++                process_row = dict(process)
++                process_row["_sample_mono_ns"] = integer_or_none(event.get("monotonic_time_ns"))
++                by_identity.setdefault(identity, []).append(process_row)
++
++        rss = sum_numeric(process.get("rss_bytes") for process in processes)
++        pss = sum_numeric(process.get("pss_bytes") for process in processes)
++        private_bytes = sum_numeric(process.get("private_bytes") for process in processes)
++        sample_rows.append(
++            {
++                "monotonic_time_ns": integer_or_none(event.get("monotonic_time_ns")),
++                "process_count": len(processes),
++                "rss_bytes": rss,
++                "pss_bytes": pss,
++                "private_bytes": private_bytes,
++            }
++        )
++
++    clk = clk_tck or 100
++    cpu_ticks = 0
++    read_delta = 0
++    write_delta = 0
++    read_found = False
++    write_found = False
++    for rows in by_identity.values():
++        rows.sort(key=lambda row: integer_or_none(row.get("_sample_mono_ns")) or -1)
++        first = rows[0]
++        last = rows[-1]
++        cpu_ticks += max(
++            0,
++            (integer_or_none(last.get("utime_ticks")) or 0)
++            + (integer_or_none(last.get("stime_ticks")) or 0)
++            - (integer_or_none(first.get("utime_ticks")) or 0)
++            - (integer_or_none(first.get("stime_ticks")) or 0),
++        )
++        read_start = integer_or_none(first.get("read_bytes"))
++        read_end = integer_or_none(last.get("read_bytes"))
++        if read_start is not None and read_end is not None:
++            read_delta += max(0, read_end - read_start)
++            read_found = True
++        write_start = integer_or_none(first.get("write_bytes"))
++        write_end = integer_or_none(last.get("write_bytes"))
++        if write_start is not None and write_end is not None:
++            write_delta += max(0, write_end - write_start)
++            write_found = True
++
++    cpu_time_s = cpu_ticks / clk if clk > 0 else None
++    window_s = window_duration_s(start_ns, end_ns, samples)
++    cpu_wall_ratio = ratio_or_none(cpu_time_s, window_s)
++    process_count_max = max_present(row.get("process_count") for row in sample_rows)
++    process_count_last = sample_rows[-1].get("process_count") if sample_rows else None
++    return {
++        "quality": "sampled_window" if len(samples) >= 2 else "single_sample",
++        "sample_count": len(samples),
++        "process_count_max": integer_or_none(process_count_max),
++        "process_count_last": process_count_last,
++        "cpu_time_s": cpu_time_s,
++        "cpu_wall_ratio": cpu_wall_ratio,
++        "avg_cpu_percent": cpu_wall_ratio * 100 if cpu_wall_ratio is not None else None,
++        "peak_rss_bytes": max_present(row.get("rss_bytes") for row in sample_rows),
++        "avg_rss_bytes": mean_present(row.get("rss_bytes") for row in sample_rows),
++        "peak_pss_bytes": max_present(row.get("pss_bytes") for row in sample_rows),
++        "avg_pss_bytes": mean_present(row.get("pss_bytes") for row in sample_rows),
++        "peak_private_bytes": max_present(row.get("private_bytes") for row in sample_rows),
++        "avg_private_bytes": mean_present(row.get("private_bytes") for row in sample_rows),
++        "read_bytes_delta": read_delta if read_found else None,
++        "write_bytes_delta": write_delta if write_found else None,
++    }
++
++
++def ascend_window_summary(
++    ascend_events: list[dict[str, Any]],
++    start_ns: Any,
++    end_ns: Any,
++    *,
++    target_devices: set[str] | None,
++) -> dict[str, Any]:
++    samples = events_in_window(ascend_events, start_ns, end_ns)
++    if not samples:
++        return {"quality": "missing", "sample_count": 0, "target_attribution_status": "unavailable"}
++
++    host_rows: list[dict[str, Any]] = []
++    target_rows: list[dict[str, Any]] = []
++    parser_confidences: list[float] = []
++    collected_devices: set[str] = set()
++    for event in samples:
++        payload = as_dict(event.get("payload"))
++        confidence = number_or_none(payload.get("parser_confidence"))
++        if confidence is not None:
++            parser_confidences.append(float(confidence))
++        devices = [device for device in payload.get("devices") or [] if isinstance(device, dict)]
++        for device in devices:
++            device_id = device_identity(device)
++            if device_id is not None:
++                collected_devices.add(device_id)
++        host_rows.append(device_sample_summary(devices))
++        selected = [device for device in devices if target_devices and device_identity(device) in target_devices]
++        target_rows.append(device_sample_summary(selected))
++
++    has_target = bool(target_devices)
++    target_has_metrics = any(row.get("hbm_used_bytes") is not None or row.get("aicore_util_pct") is not None for row in target_rows)
++    return {
++        "quality": "sampled_window" if len(samples) >= 2 else "single_sample",
++        "sample_count": len(samples),
++        "parser_confidence_mean": sum(parser_confidences) / len(parser_confidences) if parser_confidences else None,
++        "collected_devices": sorted(collected_devices),
++        "target_devices": sorted(target_devices) if target_devices else None,
++        "target_attribution_status": "complete" if has_target and target_has_metrics else "unavailable",
++        "target_peak_hbm_used_bytes": max_present(row.get("hbm_used_bytes") for row in target_rows) if has_target else None,
++        "target_avg_hbm_used_bytes": mean_present(row.get("hbm_used_bytes") for row in target_rows) if has_target else None,
++        "target_max_aicore_util_pct": max_present(row.get("aicore_util_pct") for row in target_rows) if has_target else None,
++        "target_avg_aicore_util_pct": mean_present(row.get("aicore_util_pct") for row in target_rows) if has_target else None,
++        "host_peak_hbm_used_bytes": max_present(row.get("hbm_used_bytes") for row in host_rows),
++        "host_avg_hbm_used_bytes": mean_present(row.get("hbm_used_bytes") for row in host_rows),
++        "host_max_aicore_util_pct": max_present(row.get("aicore_util_pct") for row in host_rows),
++        "host_avg_aicore_util_pct": mean_present(row.get("aicore_util_pct") for row in host_rows),
++    }
++
++
++def events_in_window(events: list[dict[str, Any]], start_ns: Any, end_ns: Any) -> list[dict[str, Any]]:
++    start = integer_or_none(start_ns)
++    end = integer_or_none(end_ns)
++    selected: list[dict[str, Any]] = []
++    for event in events:
++        mono = integer_or_none(event.get("monotonic_time_ns"))
++        if mono is None:
++            continue
++        if start is not None and mono < start:
++            continue
++        if end is not None and mono > end:
++            continue
++        selected.append(event)
++    return selected
++
++
++def proc_process_matches(
++    process: dict[str, Any],
++    *,
++    role: str | None,
++    pid: int | None,
++    pgid: int | None,
++) -> bool:
++    if pid is not None and integer_or_none(process.get("pid")) == pid:
++        return True
++    if pgid is not None and integer_or_none(process.get("pgid")) == pgid:
++        return True
++    if pid is not None or pgid is not None:
++        return False
++    return role is None or process.get("role") == role
++
++
++def device_sample_summary(devices: list[dict[str, Any]]) -> dict[str, Any]:
++    hbm_values = [number_or_none(device.get("hbm_used_bytes")) for device in devices]
++    hbm_clean = [value for value in hbm_values if value is not None]
++    util_values = [number_or_none(device.get("aicore_util_pct")) for device in devices]
++    util_clean = [value for value in util_values if value is not None]
++    return {
++        "hbm_used_bytes": sum(hbm_clean) if hbm_clean else None,
++        "aicore_util_pct": max(util_clean) if util_clean else None,
++    }
++
++
++def device_identity(device: dict[str, Any]) -> str | None:
++    for key in ("device_id", "npu_id", "id", "chip_id"):
++        value = device.get(key)
++        if value not in {None, ""}:
++            return str(value)
++    return None
++
++
++def parse_device_ids(value: str | None) -> set[str] | None:
++    if not value:
++        return None
++    devices = {part.strip() for part in value.split(",") if part.strip()}
++    return devices or None
++
++
++def infer_p2_visible_devices(events: list[dict[str, Any]]) -> set[str] | None:
++    for event in events:
++        if event.get("source") != "vllm_p2" or event.get("event_type") != "vllm.adapter.capability":
++            continue
++        payload = as_dict(event.get("payload"))
++        for key in ("visible_devices", "target_devices", "device_ids", "ascend_devices"):
++            devices = normalize_device_list(payload.get(key))
++            if devices:
++                return devices
++    return None
++
++
++def normalize_device_list(value: Any) -> set[str] | None:
++    if isinstance(value, str):
++        return parse_device_ids(value)
++    if isinstance(value, (list, tuple)):
++        devices = {str(item) for item in value if item not in {None, ""}}
++        return devices or None
++    return None
++
++
++def window_duration_s(start_ns: Any, end_ns: Any, events: list[dict[str, Any]]) -> float | None:
++    explicit = ns_to_s(ns_delta(start_ns, end_ns))
++    if explicit is not None and explicit > 0:
++        return explicit
++    times = [integer_or_none(event.get("monotonic_time_ns")) for event in events]
++    clean = [time_ns for time_ns in times if time_ns is not None]
++    if len(clean) >= 2:
++        return ns_to_s(max(clean) - min(clean))
++    return None
++
++
+ def format_output(payload: dict[str, Any] | list[dict[str, Any]], fmt: str) -> str:
+@@ -523,2 +933,6 @@ def format_table_one(analysis: dict[str, Any]) -> str:
+     for step in analysis["steps"]:
++        snapshot = as_dict(step.get("kv_snapshot"))
++        agent_proc = as_dict(step.get("agent_proc"))
++        vllm_proc = as_dict(step.get("vllm_proc"))
++        npu = as_dict(step.get("npu"))
+         lines.append(
+@@ -526,3 +940,12 @@ def format_table_one(analysis: dict[str, Any]) -> str:
+             f"status={step.get('status') or 'N/A'} duration={fmt_s(step.get('duration_s'))} "
+-            f"model={fmt_s(step.get('model_time_s'))} tool={fmt_s(step.get('tool_time_s'))}"
++            f"model={fmt_s(step.get('model_time_s'))} tool={fmt_s(step.get('tool_time_s'))} "
++            f"agent_cpu={fmt_s(agent_proc.get('cpu_time_s'))} "
++            f"agent_cpu/wall={fmt_pct(agent_proc.get('cpu_wall_ratio'))} "
++            f"agent_pss={fmt_bytes(agent_proc.get('peak_pss_bytes'))} "
++            f"vllm_cpu={fmt_s(vllm_proc.get('cpu_time_s'))} "
++            f"hbm={fmt_bytes(first_value(npu.get('target_peak_hbm_used_bytes'), npu.get('host_peak_hbm_used_bytes')))} "
++            f"aicore={fmt_pct_value(first_value(npu.get('target_max_aicore_util_pct'), npu.get('host_max_aicore_util_pct')))} "
++            f"reuse={fmt_pct(step.get('kv_cache_reuse_rate'))} "
++            f"kv_usage={fmt_pct(first_value(step.get('kv_usage_ratio_after_max'), snapshot.get('kv_usage_ratio')))} "
++            f"pool/rank={fmt_bytes(snapshot.get('kv_pool_allocated_bytes_per_rank'))}"
+         )
+@@ -531,2 +954,5 @@ def format_table_one(analysis: dict[str, Any]) -> str:
+                 p2 = item.get("p2") or {}
++                kv_snapshot = as_dict(p2.get("kv_snapshot"))
++                vllm_proc = as_dict(item.get("vllm_proc"))
++                npu = as_dict(item.get("npu"))
+                 lines.append(
+@@ -535,4 +961,8 @@ def format_table_one(analysis: dict[str, Any]) -> str:
+                     f"p2_e2e={fmt_s(p2.get('e2e_s'))} "
++                    f"vllm_cpu={fmt_s(vllm_proc.get('cpu_time_s'))} "
++                    f"hbm={fmt_bytes(first_value(npu.get('target_peak_hbm_used_bytes'), npu.get('host_peak_hbm_used_bytes')))} "
+                     f"tokens={fmt_na(item.get('prompt_tokens'))}/{fmt_na(item.get('completion_tokens'))} "
+                     f"cached={fmt_na(item.get('cached_tokens'))} "
++                    f"reuse={fmt_pct(p2.get('cache_reuse_rate'))} "
++                    f"kv={fmt_pct(first_value(p2.get('kv_usage_after'), kv_snapshot.get('kv_usage_ratio')))} "
+                     f"corr={p2.get('correlation_quality') or 'N/A'}"
+@@ -541,2 +971,3 @@ def format_table_one(analysis: dict[str, Any]) -> str:
+                 output_bytes = first_value(item.get("output_bytes"), item.get("stdout_bytes"))
++                proc = as_dict(item.get("proc"))
+                 lines.append(
+@@ -544,3 +975,4 @@ def format_table_one(analysis: dict[str, Any]) -> str:
+                     f"{item['item_index']:>2}. tool {item.get('tool_name') or item.get('executable') or 'N/A'} "
+-                    f"duration={fmt_s(item.get('duration_s'))} rc={fmt_na(item.get('returncode'))} "
++                    f"duration={fmt_s(item.get('duration_s'))} cpu={fmt_s(proc.get('cpu_time_s'))} "
++                    f"pss={fmt_bytes(proc.get('peak_pss_bytes'))} rc={fmt_na(item.get('returncode'))} "
+                     f"timeout={item.get('timed_out') is True} output_bytes={fmt_na(output_bytes)}"
+@@ -574,2 +1006,50 @@ def format_csv(analyses: list[dict[str, Any]]) -> str:
+         "p2_correlation_quality",
++        "p2_prompt_tokens",
++        "p2_cached_prompt_tokens",
++        "p2_computed_prefill_tokens",
++        "p2_recomputed_prompt_tokens",
++        "p2_generation_tokens",
++        "p2_cache_reuse_rate",
++        "p2_recomputed_prompt_rate",
++        "p2_kv_usage_before",
++        "p2_kv_usage_after",
++        "p2_kv_usage_delta",
++        "p2_allocated_block_count",
++        "p2_freed_block_count",
++        "p2_evicted_block_count",
++        "p2_kv_quality",
++        "p2_prefix_cache_status",
++        "p2_prefix_cache_hit_rate",
++        "p2_kv_snapshot_usage_ratio",
++        "p2_kv_pool_allocated_bytes_per_rank",
++        "step_kv_cache_reuse_rate",
++        "step_kv_usage_ratio_after_max",
++        "step_kv_snapshot_usage_ratio",
++        "step_kv_pool_allocated_bytes_per_rank",
++        "step_agent_cpu_time_s",
++        "step_agent_cpu_wall_ratio",
++        "step_agent_peak_rss_bytes",
++        "step_agent_peak_pss_bytes",
++        "step_vllm_cpu_time_s",
++        "step_vllm_cpu_wall_ratio",
++        "step_vllm_peak_rss_bytes",
++        "step_vllm_peak_pss_bytes",
++        "step_target_peak_hbm_used_bytes",
++        "step_target_avg_hbm_used_bytes",
++        "step_target_max_aicore_util_pct",
++        "step_target_avg_aicore_util_pct",
++        "step_host_peak_hbm_used_bytes",
++        "step_host_avg_hbm_used_bytes",
++        "step_host_max_aicore_util_pct",
++        "step_host_avg_aicore_util_pct",
++        "model_vllm_cpu_time_s",
++        "model_vllm_peak_pss_bytes",
++        "model_target_peak_hbm_used_bytes",
++        "model_target_max_aicore_util_pct",
++        "tool_cpu_time_s",
++        "tool_cpu_wall_ratio",
++        "tool_peak_rss_bytes",
++        "tool_peak_pss_bytes",
++        "tool_read_bytes_delta",
++        "tool_write_bytes_delta",
+         "vllm_request_id",
+@@ -591,2 +1071,10 @@ def format_csv(analyses: list[dict[str, Any]]) -> str:
+                 p2 = item.get("p2") or {}
++                kv_snapshot = as_dict(p2.get("kv_snapshot"))
++                step_snapshot = as_dict(step.get("kv_snapshot"))
++                step_agent_proc = as_dict(step.get("agent_proc"))
++                step_vllm_proc = as_dict(step.get("vllm_proc"))
++                step_npu = as_dict(step.get("npu"))
++                model_vllm_proc = as_dict(item.get("vllm_proc"))
++                model_npu = as_dict(item.get("npu"))
++                tool_proc = as_dict(item.get("proc"))
+                 row = {
+@@ -601,2 +1089,50 @@ def format_csv(analyses: list[dict[str, Any]]) -> str:
+                     "p2_correlation_quality": p2.get("correlation_quality"),
++                    "p2_prompt_tokens": p2.get("prompt_tokens"),
++                    "p2_cached_prompt_tokens": p2.get("cached_prompt_tokens"),
++                    "p2_computed_prefill_tokens": p2.get("computed_prefill_tokens"),
++                    "p2_recomputed_prompt_tokens": p2.get("recomputed_prompt_tokens"),
++                    "p2_generation_tokens": p2.get("generation_tokens"),
++                    "p2_cache_reuse_rate": p2.get("cache_reuse_rate"),
++                    "p2_recomputed_prompt_rate": p2.get("recomputed_prompt_rate"),
++                    "p2_kv_usage_before": p2.get("kv_usage_before"),
++                    "p2_kv_usage_after": p2.get("kv_usage_after"),
++                    "p2_kv_usage_delta": p2.get("kv_usage_delta"),
++                    "p2_allocated_block_count": p2.get("allocated_block_count"),
++                    "p2_freed_block_count": p2.get("freed_block_count"),
++                    "p2_evicted_block_count": p2.get("evicted_block_count"),
++                    "p2_kv_quality": p2.get("kv_quality"),
++                    "p2_prefix_cache_status": kv_snapshot.get("prefix_cache_status"),
++                    "p2_prefix_cache_hit_rate": kv_snapshot.get("prefix_cache_hit_rate"),
++                    "p2_kv_snapshot_usage_ratio": kv_snapshot.get("kv_usage_ratio"),
++                    "p2_kv_pool_allocated_bytes_per_rank": kv_snapshot.get("kv_pool_allocated_bytes_per_rank"),
++                    "step_kv_cache_reuse_rate": step.get("kv_cache_reuse_rate"),
++                    "step_kv_usage_ratio_after_max": step.get("kv_usage_ratio_after_max"),
++                    "step_kv_snapshot_usage_ratio": step_snapshot.get("kv_usage_ratio"),
++                    "step_kv_pool_allocated_bytes_per_rank": step_snapshot.get("kv_pool_allocated_bytes_per_rank"),
++                    "step_agent_cpu_time_s": step_agent_proc.get("cpu_time_s"),
++                    "step_agent_cpu_wall_ratio": step_agent_proc.get("cpu_wall_ratio"),
++                    "step_agent_peak_rss_bytes": step_agent_proc.get("peak_rss_bytes"),
++                    "step_agent_peak_pss_bytes": step_agent_proc.get("peak_pss_bytes"),
++                    "step_vllm_cpu_time_s": step_vllm_proc.get("cpu_time_s"),
++                    "step_vllm_cpu_wall_ratio": step_vllm_proc.get("cpu_wall_ratio"),
++                    "step_vllm_peak_rss_bytes": step_vllm_proc.get("peak_rss_bytes"),
++                    "step_vllm_peak_pss_bytes": step_vllm_proc.get("peak_pss_bytes"),
++                    "step_target_peak_hbm_used_bytes": step_npu.get("target_peak_hbm_used_bytes"),
++                    "step_target_avg_hbm_used_bytes": step_npu.get("target_avg_hbm_used_bytes"),
++                    "step_target_max_aicore_util_pct": step_npu.get("target_max_aicore_util_pct"),
++                    "step_target_avg_aicore_util_pct": step_npu.get("target_avg_aicore_util_pct"),
++                    "step_host_peak_hbm_used_bytes": step_npu.get("host_peak_hbm_used_bytes"),
++                    "step_host_avg_hbm_used_bytes": step_npu.get("host_avg_hbm_used_bytes"),
++                    "step_host_max_aicore_util_pct": step_npu.get("host_max_aicore_util_pct"),
++                    "step_host_avg_aicore_util_pct": step_npu.get("host_avg_aicore_util_pct"),
++                    "model_vllm_cpu_time_s": model_vllm_proc.get("cpu_time_s"),
++                    "model_vllm_peak_pss_bytes": model_vllm_proc.get("peak_pss_bytes"),
++                    "model_target_peak_hbm_used_bytes": model_npu.get("target_peak_hbm_used_bytes"),
++                    "model_target_max_aicore_util_pct": model_npu.get("target_max_aicore_util_pct"),
++                    "tool_cpu_time_s": tool_proc.get("cpu_time_s"),
++                    "tool_cpu_wall_ratio": tool_proc.get("cpu_wall_ratio"),
++                    "tool_peak_rss_bytes": tool_proc.get("peak_rss_bytes"),
++                    "tool_peak_pss_bytes": tool_proc.get("peak_pss_bytes"),
++                    "tool_read_bytes_delta": tool_proc.get("read_bytes_delta"),
++                    "tool_write_bytes_delta": tool_proc.get("write_bytes_delta"),
+                     "vllm_request_id": p2.get("vllm_request_id"),
+@@ -697,2 +1233,31 @@ def sum_present(values: Any) -> int | None:
+ 
++def sum_numeric(values: Any) -> int | float | None:
++    total: int | float = 0
++    found = False
++    for value in values:
++        number = number_or_none(value)
++        if number is not None:
++            total += number
++            found = True
++    return total if found else None
++
++
++def mean_present(values: Any) -> float | None:
++    clean = [number for value in values if (number := number_or_none(value)) is not None]
++    return sum(clean) / len(clean) if clean else None
++
++
++def max_present(values: Any) -> float | int | None:
++    clean = [number for value in values if (number := number_or_none(value)) is not None]
++    return max(clean) if clean else None
++
++
++def ratio_or_none(numerator: Any, denominator: Any) -> float | None:
++    top = number_or_none(numerator)
++    bottom = number_or_none(denominator)
++    if top is None or bottom in {None, 0}:
++        return None
++    return float(top) / float(bottom)
++
++
+ def nonzero(value: Any) -> bool:
+@@ -711,2 +1276,26 @@ def fmt_na(value: Any) -> str:
+ 
++def fmt_pct(value: Any) -> str:
++    number = number_or_none(value)
++    return "N/A" if number is None else f"{number * 100:.2f}%"
++
++
++def fmt_pct_value(value: Any) -> str:
++    number = number_or_none(value)
++    return "N/A" if number is None else f"{number:.2f}%"
++
++
++def fmt_bytes(value: Any) -> str:
++    number = number_or_none(value)
++    if number is None:
++        return "N/A"
++    units = ["B", "KiB", "MiB", "GiB", "TiB"]
++    size = float(number)
++    unit = units[0]
++    for unit in units:
++        if abs(size) < 1024 or unit == units[-1]:
++            break
++        size /= 1024
++    return f"{size:.2f} {unit}"
++
++
+ if __name__ == "__main__":
+diff --git a/src/agentmon/cli.py b/src/agentmon/cli.py
+index a9a1941..04cdf67 100644
+--- a/src/agentmon/cli.py
++++ b/src/agentmon/cli.py
+@@ -9,2 +9,3 @@ import sys
+ from typing import Sequence
++from uuid import uuid4
+ 
+@@ -79,2 +80,21 @@ def build_parser() -> argparse.ArgumentParser:
+ 
++    p2_importer = subparsers.add_parser("import-p2", help="import a vLLM P2 service event slice into a run")
++    add_config_args(p2_importer)
++    p2_importer.add_argument("path", help="service-scoped P2 events.jsonl")
++    p2_importer.add_argument("--run-id", required=True, help="append P2 events to this AgentMon run")
++    p2_importer.add_argument("--start-offset", type=int, help="start byte offset in the source P2 JSONL")
++    p2_importer.add_argument("--end-offset", type=int, help="exclusive end byte offset in the source P2 JSONL")
++    p2_importer.add_argument(
++        "--quality",
++        choices=["direct", "service_exclusive", "service_stream", "heuristic"],
++        default="service_stream",
++        help="attribution quality label for the imported slice",
++    )
++    p2_importer.add_argument("--filter-run-id", help="keep only P2 events whose top-level or payload run_id matches")
++    p2_importer.add_argument(
++        "--require-events",
++        action="store_true",
++        help="exit non-zero if no vllm_p2 events were imported",
++    )
++
+     exporter = subparsers.add_parser("export", help="export report data for a run")
+@@ -133,2 +153,4 @@ def main(argv: Sequence[str] | None = None) -> int:
+         return _import_trajectory(args)
++    if args.command == "import-p2":
++        return _import_p2(args)
+     if args.command == "export":
+@@ -409,2 +431,6 @@ def parse_time_filter(value: str | None) -> int | None:
+ 
++def as_dict(value: object) -> dict[str, object]:
++    return value if isinstance(value, dict) else {}
++
++
+ def format_summary_output(summary: dict[str, object], fmt: str) -> str:
+@@ -451,2 +477,143 @@ def _import_trajectory(args: argparse.Namespace) -> int:
+ 
++def _import_p2(args: argparse.Namespace) -> int:
++    try:
++        cfg = _load_cfg(args)
++        run_dir = find_run_dir(cfg, args.run_id)
++        source = Path(args.path).expanduser()
++        read_result = read_p2_event_slice(source, start_offset=args.start_offset, end_offset=args.end_offset)
++        imported_events: list[dict[str, object]] = []
++        for event in read_result["events"]:
++            if event.get("source") != "vllm_p2":
++                continue
++            if args.filter_run_id and not p2_event_matches_run(event, args.filter_run_id):
++                continue
++            imported_events.append(
++                normalize_imported_p2_event(
++                    event,
++                    run_id=args.run_id,
++                    source_path=source,
++                    start_offset=args.start_offset,
++                    end_offset=args.end_offset,
++                    quality=args.quality,
++                )
++            )
++        if imported_events:
++            with JsonlWriter(run_dir / "events.jsonl") as writer:
++                for event in imported_events:
++                    writer.write_event(event)
++        report = write_reports(run_dir)
++    except Exception as exc:
++        print(f"agentmon import-p2 error: {exc}", file=sys.stderr)
++        return 2
++
++    result = {
++        "schema_version": "1.0",
++        "command": "import-p2",
++        "run_id": args.run_id,
++        "source": str(Path(args.path).expanduser()),
++        "start_offset": args.start_offset,
++        "end_offset": args.end_offset,
++        "quality": args.quality,
++        "filter_run_id": args.filter_run_id,
++        "scanned_lines": read_result["scanned_lines"],
++        "invalid_lines": read_result["invalid_lines"],
++        "non_p2_event_count": read_result["non_p2_event_count"],
++        "imported_event_count": len(imported_events),
++        "vllm_p2_status": as_dict(report.get("vllm_p2")).get("status"),
++        "vllm_p2_request_count": as_dict(report.get("vllm_p2")).get("request_count"),
++        "report": str(run_dir / "report.txt"),
++    }
++    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
++    return 1 if args.require_events and not imported_events else 0
++
++
++def read_p2_event_slice(path: Path, *, start_offset: int | None, end_offset: int | None) -> dict[str, object]:
++    if start_offset is not None and start_offset < 0:
++        raise ValueError("start-offset must be >= 0")
++    if end_offset is not None and end_offset < 0:
++        raise ValueError("end-offset must be >= 0")
++    if start_offset is not None and end_offset is not None and end_offset < start_offset:
++        raise ValueError("end-offset must be >= start-offset")
++
++    start = start_offset or 0
++    file_size = path.stat().st_size
++    length = None if end_offset is None else max(0, end_offset - start)
++    with path.open("rb") as handle:
++        drop_first = False
++        if start > 0:
++            handle.seek(start - 1)
++            drop_first = handle.read(1) != b"\n"
++        handle.seek(start)
++        raw = handle.read() if length is None else handle.read(length)
++    lines = raw.splitlines()
++    if drop_first and lines:
++        lines = lines[1:]
++    if end_offset is not None and end_offset < file_size and raw and not raw.endswith(b"\n") and lines:
++        lines = lines[:-1]
++
++    events: list[dict[str, object]] = []
++    invalid_lines = 0
++    non_p2_event_count = 0
++    for raw_line in lines:
++        if not raw_line.strip():
++            continue
++        try:
++            item = json.loads(raw_line.decode("utf-8", errors="replace"))
++        except json.JSONDecodeError:
++            invalid_lines += 1
++            continue
++        if not isinstance(item, dict):
++            invalid_lines += 1
++            continue
++        if item.get("source") != "vllm_p2":
++            non_p2_event_count += 1
++        events.append(item)
++    return {
++        "events": events,
++        "scanned_lines": len(lines),
++        "invalid_lines": invalid_lines,
++        "non_p2_event_count": non_p2_event_count,
++    }
++
++
++def normalize_imported_p2_event(
++    event: dict[str, object],
++    *,
++    run_id: str,
++    source_path: Path,
++    start_offset: int | None,
++    end_offset: int | None,
++    quality: str,
++) -> dict[str, object]:
++    copied = dict(event)
++    labels = dict(as_dict(copied.get("labels")))
++    payload = dict(as_dict(copied.get("payload")))
++    original_event_id = copied.get("event_id")
++    original_run_id = copied.get("run_id")
++    original_payload_run_id = payload.get("run_id")
++    if original_payload_run_id not in {None, "", run_id}:
++        payload.setdefault("service_run_id", original_payload_run_id)
++    payload["run_id"] = run_id
++    payload["_agentmon_p2_import"] = {
++        "source": str(source_path),
++        "source_event_id": original_event_id,
++        "source_run_id": original_run_id,
++        "source_payload_run_id": original_payload_run_id,
++        "start_offset": start_offset,
++        "end_offset": end_offset,
++        "quality": quality,
++    }
++    labels["p2_import_quality"] = quality
++    copied["run_id"] = run_id
++    copied["event_id"] = f"p2-import-{uuid4()}"
++    copied["labels"] = labels
++    copied["payload"] = payload
++    return copied
++
++
++def p2_event_matches_run(event: dict[str, object], run_id: str) -> bool:
++    payload = as_dict(event.get("payload"))
++    return event.get("run_id") == run_id or payload.get("run_id") == run_id
++
++
+ def _live(args: argparse.Namespace) -> int:
+diff --git a/tests/unit/test_cli.py b/tests/unit/test_cli.py
+index 364f5e6..2afff25 100644
+--- a/tests/unit/test_cli.py
++++ b/tests/unit/test_cli.py
+@@ -99 +99,105 @@ class CliTests(unittest.TestCase):
+ 
++    def test_import_p2_imports_offset_slice_and_regenerates_report(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            runs_root = root / "runs"
++            run_dir = runs_root / "run-batch"
++            run_dir.mkdir(parents=True)
++            (run_dir / "manifest.json").write_text(
++                json.dumps({"run_id": "run-batch", "status": "success", "data_quality": {}}),
++                encoding="utf-8",
++            )
++            (run_dir / "events.jsonl").write_text("", encoding="utf-8")
++            p2_path = root / "service-p2.jsonl"
++            prefix = p2_line("old-service", "vllm.request.finished", {"vllm_request_id": "old"})
++            middle = [
++                p2_line(
++                    "service-run",
++                    "vllm.request.received",
++                    {
++                        "run_id": "service-run",
++                        "agent_request_id": "model-1",
++                        "vllm_request_id": "vllm-1",
++                        "correlation_quality": "direct",
++                        "received_ns": 100,
++                    },
++                ),
++                p2_line(
++                    "service-run",
++                    "vllm.request.finished",
++                    {
++                        "run_id": "service-run",
++                        "agent_request_id": "model-1",
++                        "vllm_request_id": "vllm-1",
++                        "correlation_quality": "direct",
++                        "finished_ns": 300,
++                        "prompt_tokens": 10,
++                        "generation_tokens": 3,
++                    },
++                ),
++            ]
++            suffix = p2_line("new-service", "vllm.request.finished", {"vllm_request_id": "new"})
++            p2_path.write_text(prefix + "".join(middle) + suffix, encoding="utf-8")
++            start_offset = len(prefix.encode("utf-8"))
++            end_offset = start_offset + len("".join(middle).encode("utf-8"))
++
++            stdout = io.StringIO()
++            with redirect_stdout(stdout):
++                exit_code = agentmon_main(
++                    [
++                        "import-p2",
++                        "--output-root",
++                        str(runs_root),
++                        "--run-id",
++                        "run-batch",
++                        "--start-offset",
++                        str(start_offset),
++                        "--end-offset",
++                        str(end_offset),
++                        "--quality",
++                        "service_exclusive",
++                        str(p2_path),
++                    ]
++                )
++
++            result = json.loads(stdout.getvalue())
++            report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
++            rows = [
++                json.loads(line)
++                for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
++                if line.strip()
++            ]
++
++        self.assertEqual(exit_code, 0)
++        self.assertEqual(result["imported_event_count"], 2)
++        self.assertEqual(result["vllm_p2_status"], "complete")
++        self.assertEqual(result["vllm_p2_request_count"], 1)
++        self.assertEqual(report["vllm_p2"]["status"], "complete")
++        self.assertEqual(report["vllm_p2"]["request_count"], 1)
++        self.assertEqual({row["run_id"] for row in rows}, {"run-batch"})
++        self.assertTrue(all(row["event_id"].startswith("p2-import-") for row in rows))
++        self.assertEqual(rows[0]["labels"]["p2_import_quality"], "service_exclusive")
++        self.assertEqual(rows[0]["payload"]["run_id"], "run-batch")
++        self.assertEqual(rows[0]["payload"]["service_run_id"], "service-run")
++        self.assertEqual(rows[0]["payload"]["_agentmon_p2_import"]["source_run_id"], "service-run")
++        self.assertEqual(rows[1]["payload"]["vllm_request_id"], "vllm-1")
++
++
++def p2_line(run_id: str, event_type: str, payload: dict) -> str:
++    return (
++        json.dumps(
++            {
++                "schema_version": "1.0",
++                "event_id": f"{run_id}-{event_type}",
++                "run_id": run_id,
++                "source": "vllm_p2",
++                "event_type": event_type,
++                "quality": "exact",
++                "wall_time_ns": 1,
++                "monotonic_time_ns": 1,
++                "labels": {},
++                "payload": payload,
++            }
++        )
++        + "\n"
++    )
+diff --git a/tests/unit/test_step_sequence.py b/tests/unit/test_step_sequence.py
+new file mode 100644
+index 0000000..71260f8
+--- /dev/null
++++ b/tests/unit/test_step_sequence.py
+@@ -0,0 +1,348 @@
++from __future__ import annotations
++
++import importlib.util
++import json
++import tempfile
++import unittest
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[2]
++SCRIPT = ROOT / "scripts" / "agentmon_step_sequence.py"
++
++
++def load_module():
++    spec = importlib.util.spec_from_file_location("agentmon_step_sequence", SCRIPT)
++    module = importlib.util.module_from_spec(spec)
++    assert spec.loader is not None
++    spec.loader.exec_module(module)
++    return module
++
++
++class StepSequenceTests(unittest.TestCase):
++    def test_step_sequence_correlates_model_tool_and_p2(self) -> None:
++        module = load_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            run_dir = Path(tmp) / "run-seq"
++            run_dir.mkdir()
++            write_events(run_dir / "events.jsonl", sequence_events())
++
++            analysis = module.build_step_sequence(run_dir)
++            csv_output = module.format_output(analysis, "csv")
++            table_output = module.format_output(analysis, "table")
++
++        self.assertEqual(analysis["run_id"], "run-seq")
++        self.assertEqual(analysis["totals"]["step_count"], 1)
++        self.assertEqual(analysis["totals"]["model_request_count"], 1)
++        self.assertEqual(analysis["totals"]["tool_call_count"], 1)
++        self.assertEqual(analysis["totals"]["prompt_tokens"], 10)
++        self.assertEqual(analysis["totals"]["completion_tokens"], 3)
++        self.assertEqual(analysis["totals"]["tool_nonzero_return_count"], 1)
++        step = analysis["steps"][0]
++        self.assertEqual(step["step_id"], "step-1")
++        self.assertEqual(step["model_request_count"], 1)
++        self.assertEqual(step["tool_call_count"], 1)
++        model = step["items"][0]
++        tool = step["items"][1]
++        p2 = model["p2"]
++        self.assertEqual(model["item_type"], "model")
++        self.assertEqual(p2["vllm_request_id"], "vllm-1")
++        self.assertAlmostEqual(p2["e2e_s"], 2.5)
++        self.assertAlmostEqual(p2["cache_reuse_rate"], 0.2)
++        self.assertAlmostEqual(p2["kv_usage_after"], 0.25)
++        self.assertEqual(p2["allocated_block_count"], 8)
++        self.assertEqual(p2["kv_snapshot"]["prefix_cache_status"], "enabled")
++        self.assertAlmostEqual(p2["kv_snapshot"]["prefix_cache_hit_rate"], 0.5)
++        self.assertEqual(p2["kv_snapshot"]["kv_pool_allocated_bytes_per_rank"], 4096)
++        self.assertAlmostEqual(step["kv_cache_reuse_rate"], 0.2)
++        self.assertAlmostEqual(step["kv_usage_ratio_after_max"], 0.25)
++        self.assertAlmostEqual(step["agent_proc"]["cpu_time_s"], 0.45)
++        self.assertAlmostEqual(model["vllm_proc"]["cpu_time_s"], 0.3)
++        self.assertAlmostEqual(tool["proc"]["cpu_time_s"], 0.2)
++        self.assertEqual(step["agent_proc"]["peak_pss_bytes"], 1700)
++        self.assertEqual(tool["proc"]["peak_pss_bytes"], 500)
++        self.assertEqual(step["npu"]["target_peak_hbm_used_bytes"], 7000)
++        self.assertEqual(step["npu"]["target_max_aicore_util_pct"], 60)
++        self.assertEqual(analysis["resource_attribution"]["ascend_target_devices"], ["0", "1"])
++        self.assertEqual(tool["tool_name"], "bash")
++        self.assertEqual(tool["returncode"], 1)
++        self.assertIn("p2_cache_reuse_rate", csv_output)
++        self.assertIn("tool_cpu_time_s", csv_output)
++        self.assertIn("step_target_peak_hbm_used_bytes", csv_output)
++        self.assertIn("p2_e2e_s", csv_output)
++        self.assertIn("reuse=20.00%", table_output)
++        self.assertIn("agent_cpu=0.450s", table_output)
++        self.assertIn("hbm=6.84 KiB", table_output)
++        self.assertIn("Step  1 step-1", table_output)
++
++
++def write_events(path: Path, events: list[dict]) -> None:
++    path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
++
++
++def event(event_type: str, *, source: str = "mini_swe", payload: dict | None = None, mono: int = 0) -> dict:
++    return {
++        "schema_version": "1.0",
++        "event_id": f"{event_type}-{mono}",
++        "run_id": "run-seq",
++        "source": source,
++        "event_type": event_type,
++        "quality": "exact",
++        "wall_time_ns": mono,
++        "monotonic_time_ns": mono,
++        "labels": {},
++        "payload": payload or {},
++    }
++
++
++def ns(seconds: float) -> int:
++    return int(seconds * 1_000_000_000)
++
++
++def sequence_events() -> list[dict]:
++    return [
++        event(
++            "agent_step.start",
++            mono=ns(0.0),
++            payload={"span_id": "step-1", "span_type": "agent_step", "start_mono_ns": ns(0.0)},
++        ),
++        event(
++            "model_request.start",
++            mono=ns(0.1),
++            payload={
++                "span_id": "model-1",
++                "span_type": "model_request",
++                "step_id": "step-1",
++                "parent_span_id": "step-1",
++                "start_mono_ns": ns(0.1),
++                "model_name": "qwen",
++                "agentmon_model_request_id": "model-1",
++                "request_id": "model-1",
++            },
++        ),
++        event(
++            "vllm.adapter.capability",
++            source="vllm_p2",
++            mono=ns(0.12),
++            payload={"visible_devices": ["0", "1"]},
++        ),
++        event(
++            "vllm.kv.snapshot",
++            source="vllm_p2",
++            mono=ns(0.15),
++            payload={
++                "prefix_cache_status": "enabled",
++                "prefix_cache_queries": 4,
++                "prefix_cache_hits": 2,
++                "kv_usage_ratio": 0.20,
++                "kv_pool": {
++                    "allocated_pool_bytes_per_rank": 4096,
++                    "bytes_per_block_per_rank": 512,
++                    "source_quality": "complete",
++                },
++            },
++        ),
++        event(
++            "vllm.request.received",
++            source="vllm_p2",
++            mono=ns(0.2),
++            payload={
++                "agent_request_id": "model-1",
++                "vllm_request_id": "vllm-1",
++                "correlation_quality": "direct",
++                "received_ns": ns(0.2),
++            },
++        ),
++        proc_event(
++            ns(0.2),
++            [
++                proc_sample(pid=100, role="agent", starttime=10, utime=10, stime=5, rss=1000, pss=900),
++                proc_sample(pid=200, role="vllm", starttime=20, utime=100, stime=50, rss=10000, pss=9000),
++            ],
++        ),
++        ascend_event(
++            ns(0.2),
++            [
++                {"device_id": "0", "hbm_used_bytes": 1000, "aicore_util_pct": 10},
++                {"device_id": "1", "hbm_used_bytes": 2000, "aicore_util_pct": 20},
++            ],
++        ),
++        event(
++            "vllm.request.first_token",
++            source="vllm_p2",
++            mono=ns(1.0),
++            payload={
++                "agent_request_id": "model-1",
++                "vllm_request_id": "vllm-1",
++                "correlation_quality": "direct",
++                "first_token_ns": ns(1.0),
++            },
++        ),
++        proc_event(
++            ns(2.6),
++            [
++                proc_sample(pid=100, role="agent", starttime=10, utime=15, stime=6, rss=1200, pss=1000),
++                proc_sample(pid=200, role="vllm", starttime=20, utime=120, stime=60, rss=12000, pss=10000),
++            ],
++        ),
++        ascend_event(
++            ns(2.6),
++            [
++                {"device_id": "0", "hbm_used_bytes": 3000, "aicore_util_pct": 50},
++                {"device_id": "1", "hbm_used_bytes": 4000, "aicore_util_pct": 60},
++            ],
++        ),
++        event(
++            "vllm.kv.block_event",
++            source="vllm_p2",
++            mono=ns(2.0),
++            payload={
++                "request_id": "vllm-1",
++                "vllm_request_id": "vllm-1",
++                "allocated_block_count": 8,
++                "freed_block_count": 7,
++                "evicted_block_count": 1,
++                "kv_usage_before": 0.20,
++                "kv_usage_after": 0.25,
++                "kv_quality": "exact",
++            },
++        ),
++        event(
++            "vllm.request.finished",
++            source="vllm_p2",
++            mono=ns(2.7),
++            payload={
++                "agent_request_id": "model-1",
++                "vllm_request_id": "vllm-1",
++                "correlation_quality": "direct",
++                "finished_ns": ns(2.7),
++                "prompt_tokens": 10,
++                "cached_prompt_tokens": 2,
++                "recomputed_prompt_tokens": 1,
++                "generation_tokens": 3,
++            },
++        ),
++        event(
++            "model_request.end",
++            mono=ns(2.8),
++            payload={
++                "span_id": "model-1",
++                "span_type": "model_request",
++                "step_id": "step-1",
++                "parent_span_id": "step-1",
++                "end_mono_ns": ns(2.8),
++                "duration_ns": ns(2.7),
++                "status": "success",
++                "usage": {"prompt_tokens": 10, "completion_tokens": 3, "cached_tokens": 1},
++            },
++        ),
++        event(
++            "tool_call.start",
++            mono=ns(3.0),
++            payload={
++                "span_id": "tool-1",
++                "tool_call_id": "tool-1",
++                "span_type": "tool_call",
++                "step_id": "step-1",
++                "parent_span_id": "step-1",
++                "start_mono_ns": ns(3.0),
++                "tool_name": "bash",
++                "executable": "bash",
++                "command_hash": "abc",
++            },
++        ),
++        proc_event(
++            ns(3.05),
++            [
++                proc_sample(pid=100, role="agent", starttime=10, utime=20, stime=8, rss=1300, pss=1100),
++                proc_sample(pid=300, role="agent", starttime=30, utime=0, stime=0, rss=400, pss=300, pgid=3000),
++            ],
++        ),
++        event(
++            "tool_call.end",
++            mono=ns(3.4),
++            payload={
++                "span_id": "tool-1",
++                "tool_call_id": "tool-1",
++                "span_type": "tool_call",
++                "step_id": "step-1",
++                "parent_span_id": "step-1",
++                "end_mono_ns": ns(3.4),
++                "duration_ns": ns(0.4),
++                "status": "failed",
++                "returncode": 1,
++                "pid": 300,
++                "pgid": 3000,
++                "output_bytes": 12,
++                "attribution_quality": "exact_pid_boundary",
++            },
++        ),
++        proc_event(
++            ns(3.35),
++            [
++                proc_sample(pid=100, role="agent", starttime=10, utime=30, stime=10, rss=1400, pss=1200),
++                proc_sample(pid=300, role="agent", starttime=30, utime=20, stime=0, rss=600, pss=500, pgid=3000),
++            ],
++        ),
++        event(
++            "agent_step.end",
++            mono=ns(3.5),
++            payload={
++                "span_id": "step-1",
++                "span_type": "agent_step",
++                "end_mono_ns": ns(3.5),
++                "duration_ns": ns(3.5),
++                "status": "success",
++            },
++        ),
++    ]
++
++
++def proc_event(mono: int, processes: list[dict]) -> dict:
++    return event(
++        "sample",
++        source="proc",
++        mono=mono,
++        payload={
++            "processes": processes,
++            "aggregate": {"agent": {}, "vllm": {}, "clk_tck": 100},
++        },
++    )
++
++
++def proc_sample(
++    *,
++    pid: int,
++    role: str,
++    starttime: int,
++    utime: int,
++    stime: int,
++    rss: int,
++    pss: int,
++    pgid: int | None = None,
++) -> dict:
++    return {
++        "pid": pid,
++        "role": role,
++        "starttime_ticks": starttime,
++        "pgid": pgid if pgid is not None else pid,
++        "utime_ticks": utime,
++        "stime_ticks": stime,
++        "rss_bytes": rss,
++        "pss_bytes": pss,
++        "read_bytes": 0,
++        "write_bytes": 0,
++    }
++
++
++def ascend_event(mono: int, devices: list[dict]) -> dict:
++    return event(
++        "sample",
++        source="ascend",
++        mono=mono,
++        payload={
++            "status": "supported",
++            "parser_confidence": 0.8,
++            "devices": devices,
++        },
++    )

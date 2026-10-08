@@ -1,0 +1,183 @@
+{
+  "manifest_entries": 633,
+  "missing_count": 67,
+  "missing": [
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/README.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/01_cacheblend.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/01_cacheblend.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/02_epic.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/02_epic.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/03_cache_craft.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/03_cache_craft.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/05_a3.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/05_a3.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/07_prophetkv.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/07_prophetkv.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/08_qcfuse.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/08_qcfuse.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/10_relaycaching.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/10_relaycaching.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/12_kvcomm.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/12_kvcomm.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/13_cacheslide.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/13_cacheslide.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/14_agentkvshift.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1/14_agentkvshift.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_coverage_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_evidence_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_extraction_report.json",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_implementation_readiness.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_recipe_evidence_coverage.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_source_version_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch1_unresolved_questions.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/04_kvshare.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/04_kvshare.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/06_fusionrag.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/06_fusionrag.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/09_cachetune.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/09_cachetune.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/11_daf.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/11_daf.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/15_kvlink.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/15_kvlink.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/16_kvpacket.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/16_kvpacket.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/17_c2kv.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/17_c2kv.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/18_irminsul.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/18_irminsul.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/19_recache.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/19_recache.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/20_mepic.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/20_mepic.yaml",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/source_inventory.json",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2/source_inventory.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_coverage_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_evidence_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_extraction_report.json",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_implementation_readiness.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_recipe_evidence_coverage.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_source_version_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/batch2_unresolved_questions.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/source_inventory.json",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/source_inventory.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_coverage_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_execution_capability_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_extraction_report.json",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_method_taxonomy.md",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_readiness_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_recipe_evidence_coverage.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_source_version_matrix.csv",
+    "kv_ana/literature_fetch_pack_v3/literature/paper_specs/unified20/20paper_unresolved_questions.md"
+  ],
+  "size_mismatches": [
+    {
+      "path": "agentmon/artifacts/patches/agentmon-target-device-token-attribution-fix-20260703-v3.patch",
+      "expected": 86031,
+      "actual": 85838
+    }
+  ],
+  "paper_specs": [
+    {
+      "paper_id": "01",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/01_cacheblend.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "02",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/02_epic.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "03",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/03_cache_craft.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "04",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/04_kvshare.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "05",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/05_a3.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "06",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/06_fusionrag.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "07",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/07_prophetkv.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "08",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/08_qcfuse.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "09",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/09_cachetune.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "10",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/10_relaycaching.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "11",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/11_daf.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "12",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/12_kvcomm.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "13",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/13_cacheslide.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "14",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch1/14_agentkvshift.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "15",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/15_kvlink.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "16",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/16_kvpacket.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "17",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/17_c2kv.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "18",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/18_irminsul.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "19",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/19_recache.yaml",
+      "exists": false
+    },
+    {
+      "paper_id": "20",
+      "path": "literature_fetch_pack_v3/literature/paper_specs/batch2/20_mepic.yaml",
+      "exists": false
+    }
+  ],
+  "root_gitignore_exists": false
+}

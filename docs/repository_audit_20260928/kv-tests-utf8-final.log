@@ -1,0 +1,22 @@
+...................................................F.................... [ 21%]
+........................................................................ [ 43%]
+........................................................................ [ 64%]
+........................................................................ [ 86%]
+.............................................                            [100%]
+================================== FAILURES ===================================
+__________ test_paper_capability_audit_is_20_unique_and_conservative __________
+
+    def test_paper_capability_audit_is_20_unique_and_conservative() -> None:
+        rows = audit_paper_capabilities(ROOT)
+        assert len(rows) == 20
+        assert len({row["paper_id"] for row in rows}) == 20
+        by_id = {row["paper_id"]: row for row in rows}
+>       assert by_id["14"]["classification"] == "OFFLINE_COMPONENT_EXECUTABLE"
+E       AssertionError: assert 'BLOCKED_SOURCE' == 'OFFLINE_COMPONENT_EXECUTABLE'
+E         - OFFLINE_COMPONENT_EXECUTABLE
+E         + BLOCKED_SOURCE
+
+tests\test_real_offline_pipeline.py:23: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_real_offline_pipeline.py::test_paper_capability_audit_is_20_unique_and_conservative
+1 failed, 332 passed in 3.55s

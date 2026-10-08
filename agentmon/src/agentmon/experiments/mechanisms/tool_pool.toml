@@ -1,0 +1,45 @@
+name = "tool_pool"
+description = "Runtime-side tool pool and local tool execution admission control."
+
+allowed_execution_paths = [
+  "tool_pool_executor",
+  "runtime_service",
+]
+
+allowed_config_differences = [
+  "runtime_optimization.enabled",
+  "control.enabled",
+  "control.mode",
+  "tool_pool.*",
+]
+
+activation_event_types = [
+  "control.tool_pool.acquire",
+  "control.tool_execution.completed",
+  "control.tool_execution.rejected",
+  "control.tool_execution.error",
+]
+
+negative_reason_paths = [
+  "payload.reason",
+  "payload.lease.reason",
+]
+
+negative_reasons = [
+  "pool_disabled",
+  "tool_pool_disabled",
+  "runtime optimization disabled",
+]
+
+forbidden_conclusions = [
+  "tool pool activation only applies to tools launched through the pooled executor.",
+  "tool pool activation does not prove lower tool timeout rate.",
+]
+
+[required_config]
+"runtime_optimization.enabled" = true
+"control.enabled" = true
+"tool_pool.enabled" = true
+
+[coverage]
+min_count = 1

@@ -1,0 +1,16 @@
+{
+  "bundle_id": "dsv4_state_intervention_precheck_v1",
+  "scope": "C4 layer 2 explicit rows same-input replay",
+  "server_runtime_baseline": {
+    "vllm_ascend_version": "v0.22.1rc1",
+    "vllm_ascend_commit": "5f6faa0cb8830f667266f3b8121cd1383606f2a1",
+    "vllm_version": "v0.22.1",
+    "vllm_commit": "0decac0d96c42b49572498019f0a0e3600f50398",
+    "installed_dsa_v1_sha256": "99903d816a1967634f9684dd098088fdeb4711c64324739a3a0b8a7b2a4df9f2",
+    "capture_only_delta_from_official": true
+  },
+  "patch_anchor": "# [DSV4_KV_DUMP] LifeMem compressed-KV experiment.",
+  "insert_before": "if compressed_kv.numel() == 0:",
+  "modes": ["off", "identity", "zero_selected", "external"],
+  "default_mode": "off"
+}

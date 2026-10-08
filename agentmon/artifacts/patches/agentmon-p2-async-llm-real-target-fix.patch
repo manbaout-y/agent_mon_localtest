@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 90b2e4e..4a7e0a2 100644
+--- a/README.md
++++ b/README.md
+@@ -271,7 +271,7 @@ import importlib
+ import inspect
+ 
+ targets = [
+-    ("vllm.v1.engine.async_llm", "AsyncLLMEngine", ["add_request", "generate", "abort"]),
++    ("vllm.v1.engine.async_llm", "AsyncLLM", ["add_request", "generate", "abort"]),
+     ("vllm.v1.engine.llm_engine", "LLMEngine", ["add_request", "step"]),
+     ("vllm.v1.engine.core", "EngineCore", ["add_request", "step"]),
+     ("vllm.v1.core.sched.scheduler", "Scheduler", ["__init__", "add_request", "schedule", "make_stats"]),
+@@ -388,13 +388,17 @@ sink error handling.
+ The default hook targets fully qualified vLLM `0.18.0` V1 implementation paths:
+ 
+ ```text
+-vllm.v1.engine.async_llm.AsyncLLMEngine.add_request/generate/abort
++vllm.v1.engine.async_llm.AsyncLLM.add_request/generate/abort
+ vllm.v1.engine.llm_engine.LLMEngine.add_request/step
+ vllm.v1.engine.core.EngineCore.add_request/step
+ vllm.v1.core.sched.scheduler.Scheduler.__init__/add_request/schedule/make_stats
+ vllm.v1.core.kv_cache_manager.KVCacheManager.__init__/make_prefix_cache_stats
+ ```
+ 
++The compatibility export `vllm.engine.async_llm_engine.AsyncLLMEngine` may
++appear in discovery output as an alias, but the default hook binds the real V1
++implementation path `vllm.v1.engine.async_llm.AsyncLLM`.
++
+ `KVCacheManager.get_computed_blocks` is not patched by default because it is a
+ scheduler hot path. Enable it only for a short debug run:
+ 
+diff --git a/docs/p2_vllm_adapter.md b/docs/p2_vllm_adapter.md
+index 5a599c1..c68a4e5 100644
+--- a/docs/p2_vllm_adapter.md
++++ b/docs/p2_vllm_adapter.md
+@@ -107,13 +107,17 @@ base version is `0.18.0`.
+ Current vLLM `0.18.0` hook targets:
+ 
+ ```text
+-vllm.v1.engine.async_llm.AsyncLLMEngine.add_request/generate/abort
++vllm.v1.engine.async_llm.AsyncLLM.add_request/generate/abort
+ vllm.v1.engine.llm_engine.LLMEngine.add_request/step
+ vllm.v1.engine.core.EngineCore.add_request/step
+ vllm.v1.core.sched.scheduler.Scheduler.__init__/add_request/schedule/make_stats
+ vllm.v1.core.kv_cache_manager.KVCacheManager.__init__/make_prefix_cache_stats
+ ```
+ 
++The compatibility export `vllm.engine.async_llm_engine.AsyncLLMEngine` may
++appear in discovery output as an alias, but the runtime hook binds the real V1
++implementation path `vllm.v1.engine.async_llm.AsyncLLM`.
++
+ `KVCacheManager.get_computed_blocks` is a hot-path method and is not patched by
+ default. It is patched only when this explicit debug flag is truthy:
+ 
+@@ -157,7 +161,7 @@ import importlib
+ import inspect
+ 
+ targets = [
+-    ("vllm.v1.engine.async_llm", "AsyncLLMEngine", ["add_request", "generate", "abort"]),
++    ("vllm.v1.engine.async_llm", "AsyncLLM", ["add_request", "generate", "abort"]),
+     ("vllm.v1.engine.llm_engine", "LLMEngine", ["add_request", "step"]),
+     ("vllm.v1.engine.core", "EngineCore", ["add_request", "step"]),
+     ("vllm.v1.core.sched.scheduler", "Scheduler", ["__init__", "add_request", "schedule", "make_stats"]),
+@@ -692,7 +696,7 @@ Current foundation:
+ Runtime hook status for P2.1:
+ 
+ - The opt-in runtime loader binds request entry/completion events to
+-  `AsyncLLMEngine`, `LLMEngine`, and `EngineCore` when those classes exist.
++  `AsyncLLM`, `LLMEngine`, and `EngineCore` when those classes exist.
+ - Verify direct `X-AgentMon-Request-Id` propagation with a live request on the
+   target service.
+ - Add server integration tests for direct and heuristic mapping quality.
+diff --git a/scripts/agentmon_p2_discovery.py b/scripts/agentmon_p2_discovery.py
+index 49d2918..79f3ca2 100644
+--- a/scripts/agentmon_p2_discovery.py
++++ b/scripts/agentmon_p2_discovery.py
+@@ -74,7 +74,7 @@ DEFAULT_OBJECTS = [
+     "vllm.engine.metrics:StatLoggerBase",
+     "vllm.core.scheduler:Scheduler",
+     "vllm.worker.cache_engine:CacheEngine",
+-    "vllm.v1.engine.async_llm:AsyncLLMEngine",
++    "vllm.v1.engine.async_llm:AsyncLLM",
+     "vllm.v1.core.kv_cache_manager:KVCacheManager",
+     "vllm.v1.core.scheduler:Scheduler",
+     "vllm.v1.request:Request",
+diff --git a/src/agentmon/adapters/vllm_018/hook.py b/src/agentmon/adapters/vllm_018/hook.py
+index 0c59f72..8911a45 100644
+--- a/src/agentmon/adapters/vllm_018/hook.py
++++ b/src/agentmon/adapters/vllm_018/hook.py
+@@ -106,7 +106,7 @@ def hook_targets() -> list[tuple[str, str, list[tuple[str, Callable[[VllmP2HookS
+     targets: list[tuple[str, str, list[tuple[str, Callable[[VllmP2HookState], Callable[..., Any]]]]]] = [
+         (
+             "vllm.v1.engine.async_llm",
+-            "AsyncLLMEngine",
++            "AsyncLLM",
+             [
+                 ("add_request", wrap_async_add_request),
+                 ("generate", wrap_async_generate),
+@@ -214,7 +214,7 @@ def wrap_async_generate(state: VllmP2HookState) -> Callable[[Callable[..., Any]]
+                             fallback_request_id=request_id,
+                         )
+                     except Exception as exc:
+-                        state.emit_error(exc, "AsyncLLMEngine.generate.observe")
++                        state.emit_error(exc, "AsyncLLM.generate.observe")
+                     yield output
+             except (asyncio.CancelledError, GeneratorExit):
+                 emit_cancelled(state, request_id, agent_request_id=agent_request_id)
+@@ -234,7 +234,7 @@ def wrap_async_abort(state: VllmP2HookState) -> Callable[[Callable[..., Any]], C
+                 for item in as_request_ids(request_id):
+                     emit_cancelled(state, item)
+             except Exception as exc:
+-                state.emit_error(exc, "AsyncLLMEngine.abort.observe")
++                state.emit_error(exc, "AsyncLLM.abort.observe")
+             return result
+ 
+         return wrapper
+diff --git a/tests/unit/test_p2_vllm_adapter.py b/tests/unit/test_p2_vllm_adapter.py
+index d4d24a5..3800c3a 100644
+--- a/tests/unit/test_p2_vllm_adapter.py
++++ b/tests/unit/test_p2_vllm_adapter.py
+@@ -305,16 +305,16 @@ class P2VllmAdapterTests(unittest.TestCase):
+             try:
+                 result = p2_hook.install(sink=sink, force=True)
+                 self.assertEqual(result["status"], "supported")
+-                self.assertTrue(any("AsyncLLMEngine.add_request" in item for item in result["patched"]))
++                self.assertTrue(any("AsyncLLM.add_request" in item for item in result["patched"]))
+                 self.assertTrue(any("LLMEngine.add_request" in item for item in result["patched"]))
+ 
+                 from vllm.v1.core.kv_cache_manager import KVCacheManager
+                 from vllm.v1.core.sched.scheduler import Scheduler
+-                from vllm.v1.engine.async_llm import AsyncLLMEngine
++                from vllm.v1.engine.async_llm import AsyncLLM
+                 from vllm.v1.engine.core import EngineCore
+                 from vllm.v1.engine.llm_engine import LLMEngine
+ 
+-                async_engine = AsyncLLMEngine()
++                async_engine = AsyncLLM()
+                 self.assertEqual(
+                     asyncio.run(
+                         async_engine.add_request(
+@@ -569,7 +569,7 @@ def install_fake_vllm_modules(*, version: str = "0.18.0") -> list[str]:
+             )
+             return {0: outputs}, True
+ 
+-    class AsyncLLMEngine:
++    class AsyncLLM:
+         async def add_request(self, request_id: str, *args: object, **kwargs: object) -> object:
+             return types.SimpleNamespace(request_id=request_id)
+ 
+@@ -606,7 +606,7 @@ def install_fake_vllm_modules(*, version: str = "0.18.0") -> list[str]:
+ 
+     sys.modules["vllm.v1.engine.llm_engine"].LLMEngine = LLMEngine
+     sys.modules["vllm.v1.engine.core"].EngineCore = EngineCore
+-    sys.modules["vllm.v1.engine.async_llm"].AsyncLLMEngine = AsyncLLMEngine
++    sys.modules["vllm.v1.engine.async_llm"].AsyncLLM = AsyncLLM
+     sys.modules["vllm.v1.core.sched.scheduler"].Scheduler = Scheduler
+     sys.modules["vllm.v1.core.kv_cache_manager"].KVCacheManager = KVCacheManager
+     return names

@@ -1,0 +1,15 @@
+            # [DSV4_STATE_INTERVENTION_V1] BEGIN
+            _dsv4_state_intervention_mode = __import__("os").environ.get(
+                "DSV4_STATE_INTERVENTION", "off"
+            ).strip().lower()
+            if _dsv4_state_intervention_mode != "off":
+                from vllm_ascend.attention.dsv4_state_intervention_v1 import apply_runtime_intervention
+
+                compressed_kv = apply_runtime_intervention(
+                    compressed_kv=compressed_kv,
+                    slot_mapping=compressor_prefill_metadata.slot_mapping,
+                    layer_name=layer_name,
+                    compress_ratio=self.compress_ratio,
+                    mode=_dsv4_state_intervention_mode,
+                )
+            # [DSV4_STATE_INTERVENTION_V1] END

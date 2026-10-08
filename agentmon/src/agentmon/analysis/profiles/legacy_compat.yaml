@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "profile": "legacy_compat",
+  "quality_gates": {
+    "min_p2_match_rate": 0.95,
+    "min_p2_lifecycle_rate": 0.95
+  },
+  "scope": "legacy CLI backward compatibility; not used by analysis run-all"
+}

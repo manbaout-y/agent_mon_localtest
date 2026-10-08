@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "profile": "vllm_default",
+  "metrics": [
+    {
+      "canonical_name": "engine_running_requests",
+      "aliases": ["running_requests"],
+      "source_event_types": ["vllm.scheduler.iteration"],
+      "data_level": "scheduler_iteration",
+      "unit": "count",
+      "clock_domain": "engine_monotonic",
+      "definition": "Requests reported running in the scheduler iteration.",
+      "required_fields": ["running_requests"],
+      "nullable": true,
+      "aggregation_rules": ["time_weighted_mean", "p95", "max"],
+      "time_weighted": true,
+      "summable": false,
+      "quantile_allowed": true,
+      "normalization": "scheduler_window",
+      "validation_rules": ["configured_concurrency_is_not_actual_concurrency"],
+      "source_code_reference": "agentmon.adapters.inference.vllm_018.hook",
+      "version_range": "all",
+      "deprecation_status": "active"
+    }
+  ]
+}

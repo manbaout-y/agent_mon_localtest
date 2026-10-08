@@ -1,0 +1,36 @@
+# Experiment outputs and old distribution packages
+outputs/
+/dist/
+
+# Environments, caches and build products
+.venv/
+venv/
+envs/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+node_modules/
+.DS_Store
+
+# Local models and raw runtime capture
+/models/
+raw_tensors/
+*.safetensors
+
+# Local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Private user-provided transcript and local preservation manifest
+/docs/dsv41_metrics_review_20261008/evidence/user_task_original.md
+/docs/dsv41_metrics_review_20261008/evidence/prior_artifact_hashes.json
+
+# Keep source, paper specs and test JSON/JSONL/Prometheus fixtures tracked.

@@ -1,0 +1,31 @@
+name: scheduler
+description: RuntimeService admission scheduler for task/run-level execution control.
+
+allowed_execution_paths:
+  - runtime_service
+
+allowed_config_differences:
+  - runtime_optimization.enabled
+  - scheduler.*
+
+activation_event_types:
+  - runtime.queue.running
+  - runtime.queue.deferred
+
+negative_reason_paths:
+  - payload.scheduler_decision.reason
+
+negative_reasons:
+  - runtime_optimization_disabled
+  - scheduler_disabled
+
+forbidden_conclusions:
+  - scheduler queue events do not prove online speedup.
+  - configured concurrency is not observed active model/tool concurrency.
+
+required_config:
+  runtime_optimization.enabled: true
+  scheduler.enabled: true
+
+coverage:
+  min_count: 1

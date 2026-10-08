@@ -1,0 +1,40 @@
+{
+  "experiment": {
+    "name": "qwen3-coder-2card-agent-smoke",
+    "intent": "Use Qwen3-Coder-30B on two Ascend 910B cards to run a fast AgentMon mini-SWE benchmark smoke and produce P1/P2 evidence."
+  },
+  "source": {
+    "server_profile": "examples/server_profiles/chenyang_ascend910b.json"
+  },
+  "workload": {
+    "benchmark_zip": "/data/node0_disk3/chenyang/ver_0730/dist.zip",
+    "smoke_tasks": [
+      "py-001"
+    ],
+    "pilot_tasks": [
+      "py-007",
+      "py-036",
+      "py-060"
+    ]
+  },
+  "resources": {
+    "cards": 2,
+    "preferred_devices": [
+      0,
+      1
+    ],
+    "preferred_port": 8001
+  },
+  "model": {
+    "served_model": "qwen3-coder-30b",
+    "model_path": "/data/node0_disk3/chenyang/qwen3_coder_30b",
+    "max_model_len": 32768
+  },
+  "requirements": {
+    "agent_tool_calling": "required",
+    "mini_swe_noninteractive": "required",
+    "p2_runtime_gate": "required",
+    "prefix_cache": "disabled",
+    "startup_watchdog_seconds": 60
+  }
+}

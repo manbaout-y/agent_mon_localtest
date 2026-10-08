@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "profile": "agentmon_v4",
+  "inherits": "agentmon_default",
+  "metrics": [
+    {
+      "canonical_name": "publishability_status",
+      "aliases": ["report_publishability_status"],
+      "source_event_types": ["report.json", "validation_checks.json"],
+      "data_level": "run",
+      "unit": "status",
+      "clock_domain": "none",
+      "definition": "Run-level AgentMon publication gate status; it is observability quality, not task success.",
+      "required_fields": ["analysis_publication.status"],
+      "nullable": true,
+      "aggregation_rules": ["count_by_status"],
+      "time_weighted": false,
+      "summable": false,
+      "quantile_allowed": false,
+      "normalization": "none",
+      "validation_rules": ["observability_failure_is_not_task_failure"],
+      "source_code_reference": "agentmon.reporting.report.build_report_quality_bundle",
+      "version_range": "v4+",
+      "deprecation_status": "active"
+    }
+  ]
+}

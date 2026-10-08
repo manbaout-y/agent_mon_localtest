@@ -1,0 +1,7 @@
+{
+  "purpose": "isolated in-process fault injection; no source edit",
+  "cli_exit_code": 0,
+  "cli_stdout": "{\"status\": \"PASS\", \"version\": \"2.0.1\", \"records\": 14, \"accepted\": 0, \"summary_groups\": 7}\n",
+  "record_count": 14,
+  "error_records": 14
+}

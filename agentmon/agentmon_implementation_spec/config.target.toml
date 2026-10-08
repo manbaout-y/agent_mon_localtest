@@ -1,0 +1,70 @@
+[general]
+output_root = "/data/node0_disk3/chenyang/agentmon/runs"
+log_level = "INFO"
+raw_retention = true
+redact_sensitive = true
+
+[agent]
+type = "mini-swe"
+root = "/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe"
+trajectory_glob = "/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe/trajectories/**/*.traj.json"
+python = "/data/node0_disk3/chenyang/agent-runtime-poc/envs/mini-swe-v243/bin/python"
+env_unset = ["PYTHONPATH", "PYTHONHOME"]
+env_set = [
+  "PYTHONPATH=${AGENTMON_REPO}/src",
+  "PYTHONNOUSERSITE=1",
+  "NO_PROXY=127.0.0.1,localhost,::1",
+  "no_proxy=127.0.0.1,localhost,::1",
+  "MSWEA_CONFIGURED=1",
+  "MSWEA_COST_TRACKING=ignore_errors",
+  "OPENAI_API_KEY=not-needed",
+  "LITELLM_MODEL_REGISTRY_PATH=/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe/configs/model_registry.json",
+]
+
+[vllm]
+metrics_url = "http://127.0.0.1:8000/metrics"
+api_base = "http://127.0.0.1:8000/v1"
+models_url = "http://127.0.0.1:8000/v1/models"
+model_name = "qwen3-coder-30b"
+process_match = [
+  "/data/node0_disk3/chenyang/agent-runtime-poc/envs/verl-cann90/bin/vllm serve",
+  "/data/node0_disk3/chenyang/qwen3_coder_30b",
+  "VLLM::EngineCore",
+  "VLLM::Worker_TP",
+]
+interval_seconds = 1.0
+request_timeout_seconds = 2.0
+prefix_caching = "disabled"
+
+[model]
+path = "/data/node0_disk3/chenyang/qwen3_coder_30b"
+dtype = "bfloat16"
+max_model_len = 8192
+tensor_parallel_size = 4
+max_num_seqs = 4
+
+[proc]
+interval_seconds = 1.0
+read_pss = true
+read_io = true
+read_cmdline = true
+max_pids = 4096
+
+[ascend]
+interval_seconds = 1.0
+command_timeout_seconds = 3.0
+npu_smi = "auto"
+device_ids = "auto"
+retain_raw = true
+
+[storage]
+sqlite = false
+jsonl = true
+sqlite_wal = true
+flush_interval_seconds = 1.0
+queue_max_items = 20000
+
+[privacy]
+store_prompts = false
+store_tool_output = false
+store_full_command = false

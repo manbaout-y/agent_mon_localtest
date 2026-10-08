@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "name": "chenyang_ascend910b",
+  "description": "Stable Ascend 910B server defaults used by AgentMon release smoke runs. AgentMon source paths are expanded from the unpacked package at runtime.",
+  "environment": {
+    "AGENTMON_PY": "/data/node0_disk3/chenyang/agent-runtime-poc/envs/agentmon/bin/python",
+    "AGENTMON_HOME": "/data/node0_disk3/chenyang/agentmon",
+    "MINI_SWE_PY": "/data/node0_disk3/chenyang/agent-runtime-poc/envs/mini-swe-v243/bin/python",
+    "MINI_SWE_BIN": "/data/node0_disk3/chenyang/agent-runtime-poc/envs/mini-swe-v243/bin/mini",
+    "MINI_SWE_ROOT": "/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe",
+    "MINI_BASE_CONFIG": "mini.yaml",
+    "MINI_MODEL_CONFIG": "/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe/configs/local_qwen3_coder.yaml",
+    "LITELLM_MODEL_REGISTRY_PATH": "/data/node0_disk3/chenyang/agent-runtime-poc/mini-swe/configs/model_registry.json",
+    "VLLM_PY": "/data/node0_disk3/chenyang/agent-runtime-poc/envs/verl-cann90/bin/python",
+    "VLLM_BIN": "/data/node0_disk3/chenyang/agent-runtime-poc/envs/verl-cann90/bin/vllm",
+    "VLLM_VERSION": "0.18.0",
+    "VLLM_SOURCE_ROOT": "/data/node0_disk1/vllm",
+    "VLLM_IMPORT_PATH": "/data/node0_disk1/vllm/vllm/__init__.py",
+    "CANN_VERSION": "9.0.0",
+    "CANN_ROOT": "/usr/local/Ascend/cann-9.0.0",
+    "MODEL_PATH": "/data/node0_disk3/chenyang/qwen3_coder_30b",
+    "SERVED_MODEL": "qwen3-coder-30b",
+    "VLLM_HOST": "127.0.0.1",
+    "VLLM_PORT": "8000",
+    "VLLM_BASE_URL": "http://127.0.0.1:8000/v1",
+    "ASCEND_RT_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7",
+    "MAX_MODEL_LEN": "32768"
+  },
+  "preflight": {
+    "agentmon_python": "${AGENTMON_PY}",
+    "mini_swe_python": "${MINI_SWE_PY}",
+    "vllm_python": "${VLLM_PY}",
+    "agentmon_config": "${AGENTMON_REPO}/examples/config.target.toml",
+    "events_path": "${AGENTMON_HOME}/p2/preflight/events.jsonl",
+    "create_events_parent": true,
+    "vllm_launch_command_file": "",
+    "expect_prefix_cache": "any",
+    "tool_call_parser_candidates": [
+      {
+        "model_name_contains": [
+          "qwen3",
+          "coder"
+        ],
+        "parser": "qwen3_coder"
+      }
+    ],
+    "acl_python_paths": [],
+    "deep": true,
+    "strict": true,
+    "timeout_seconds": 60,
+    "require_runtime_p2": false,
+    "runtime_base_url": "",
+    "runtime_model": "",
+    "runtime_stream_probe": false
+  }
+}

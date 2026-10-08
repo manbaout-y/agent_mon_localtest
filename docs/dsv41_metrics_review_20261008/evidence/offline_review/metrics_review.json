@@ -1,0 +1,81 @@
+{
+  "schema_version": "agentmon-kv-metrics-review-v1",
+  "scope": {
+    "model_name": "deepseek-v41",
+    "engine": "0"
+  },
+  "evidence_level": "SERVICE_SNAPSHOT_ONLY",
+  "values": {
+    "prefix_cache_queries_total": 781.0,
+    "prefix_cache_hits_total": 256.0,
+    "external_prefix_cache_queries_total": 0.0,
+    "external_prefix_cache_hits_total": 0.0,
+    "num_preemptions_total": 0.0,
+    "num_requests_running": 0.0,
+    "num_requests_waiting": 0.0,
+    "kv_cache_usage_perc": 0.0
+  },
+  "cache_config_labels": {
+    "_block_size_resolved": "True",
+    "block_size": "32",
+    "cache_dtype": "bfloat16",
+    "calculate_kv_scales": "False",
+    "enable_prefix_caching": "True",
+    "engine": "0",
+    "gpu_memory_utilization": "0.9",
+    "is_attention_free": "False",
+    "kv_cache_dtype_skip_layers": "[]",
+    "kv_cache_max_concurrency": "4.9641934293097085",
+    "kv_cache_memory_bytes": "None",
+    "kv_cache_size_tokens": "1301333",
+    "kv_offloading_backend": "native",
+    "kv_offloading_size": "None",
+    "kv_sharing_fast_prefill": "False",
+    "mamba_block_size": "None",
+    "mamba_cache_dtype": "auto",
+    "mamba_cache_mode": "none",
+    "mamba_page_size_padded": "None",
+    "mamba_ssm_cache_dtype": "auto",
+    "num_cpu_blocks": "None",
+    "num_gpu_blocks": "13448",
+    "num_gpu_blocks_override": "None",
+    "prefix_caching_hash_algo": "sha256",
+    "prefix_match_unit": "None",
+    "replayssm_buffer_len": "16",
+    "skip_page_size_padded": "None",
+    "sliding_window": "128",
+    "use_replayssm": "False",
+    "user_specified_block_size": "True",
+    "user_specified_mamba_block_size": "False"
+  },
+  "issues": [],
+  "cache_config_scope": "ENGINE_ONLY",
+  "derived": {
+    "prefix_counter_ratio": 0.32778489116517284,
+    "counter_unit": "UNRESOLVED",
+    "counter_window_and_reset": "UNRESOLVED",
+    "num_gpu_blocks_times_block_size": 430336,
+    "capacity_matches_simple_product": false,
+    "capacity_div_reference_max_model_len": 4.964191436767578,
+    "reference_max_model_len": 262144,
+    "actual_max_num_seqs": "UNRESOLVED"
+  },
+  "block_size_investigation": {
+    "historical": 128,
+    "metric_label": 32,
+    "discrepancy_observed": true,
+    "resolution": "UNRESOLVED",
+    "physical_layout": "NOT_CAPTURED"
+  },
+  "request_binding": "NOT_CAPTURED",
+  "request_kv_events": "NOT_CAPTURED",
+  "tensor_capture": "NOT_CAPTURED",
+  "kv_offload_observed": "NOT_PROVEN",
+  "provenance": {
+    "source": "USER_PROVIDED_OUTPUT",
+    "input": "docs\\dsv41_metrics_review_20261008\\evidence\\user_metrics.prom",
+    "collected_at_utc": "UNKNOWN",
+    "network_access": false,
+    "model_executed": false
+  }
+}

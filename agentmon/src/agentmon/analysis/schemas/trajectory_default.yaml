@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "profile": "trajectory_default",
+  "metrics": [
+    {
+      "canonical_name": "trajectory_response_id",
+      "aliases": ["response.id"],
+      "source_event_types": ["trajectory.sample"],
+      "data_level": "request",
+      "unit": "id",
+      "clock_domain": "none",
+      "definition": "Model provider response identifier imported from trajectory metadata for request correlation.",
+      "required_fields": ["response_id"],
+      "nullable": true,
+      "aggregation_rules": ["identity"],
+      "time_weighted": false,
+      "summable": false,
+      "quantile_allowed": false,
+      "normalization": "request_identity",
+      "validation_rules": ["do_not_infer_engine_id_without_alias_evidence"],
+      "source_code_reference": "agentmon.trajectory.mini_swe",
+      "version_range": "all",
+      "deprecation_status": "active"
+    }
+  ]
+}

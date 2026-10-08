@@ -1,0 +1,125 @@
+--- a/tests/unit/test_cli.py
++++ b/tests/unit/test_cli.py
+@@ -1,12 +1,15 @@
++import io
+ import json
+ import os
+ import subprocess
+ import sys
+ import tempfile
+ import unittest
++from contextlib import redirect_stdout
+ from pathlib import Path
++from unittest.mock import patch
+ 
+-from agentmon.cli import format_live_p1
++from agentmon.cli import format_live_p1, main as agentmon_main
+ from agentmon.events import Event
+ from agentmon.storage.jsonl import JsonlWriter
+ 
+@@ -36,13 +39,33 @@
+         self.assertIn("agentmon", result.stdout)
+ 
+     def test_doctor_returns_machine_readable_status(self) -> None:
+-        result = self.run_agentmon("doctor")
++        with tempfile.TemporaryDirectory() as tmp:
++            fake_report = {
++                "schema_version": "1.0",
++                "command": "doctor",
++                "status": "partial",
++                "capabilities": {
++                    "python_output": {"status": "supported"},
++                    "host": {"status": "supported"},
++                    "ascend": {"status": "not_found"},
++                    "vllm": {"status": "unsupported"},
++                    "mini_swe": {"status": "not_found"},
++                    "p1": {"status": "not_found"},
++                },
++            }
++            stdout = io.StringIO()
++            with patch("agentmon.cli.run_doctor", return_value=(fake_report, 0)) as run_doctor:
++                with redirect_stdout(stdout):
++                    exit_code = agentmon_main(["doctor", "--output-root", tmp])
+ 
+-        self.assertEqual(result.returncode, 0, result.stderr)
+-        data = json.loads(result.stdout)
++        self.assertEqual(exit_code, 0)
++        run_doctor.assert_called_once()
++        data = json.loads(stdout.getvalue())
+         self.assertEqual(data["command"], "doctor")
+         self.assertIn(data["status"], {"supported", "partial"})
+         self.assertIn("capabilities", data)
++        for capability in data["capabilities"].values():
++            self.assertIsInstance(capability.get("status"), str)
+ 
+     def test_live_p1_summary_reads_events_jsonl(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
+--- a/tests/unit/test_run_controller.py
++++ b/tests/unit/test_run_controller.py
+@@ -48,8 +48,43 @@
+ 
+     def test_run_cleans_child_pythonpath_and_expands_run_id_placeholder(self) -> None:
+         with tempfile.TemporaryDirectory() as tmp:
++            expected_child_pythonpath = str(ROOT / "src")
++            inherited_pythonpath = os.pathsep.join(
++                [
++                    "/usr/local/Ascend/fake-pythonpath",
++                    "/tmp/legacy-pythonpath",
++                    expected_child_pythonpath,
++                ]
++            )
++            config_path = Path(tmp) / "agentmon-test.toml"
++            config_path.write_text(
++                f"""
++[general]
++output_root = "{Path(tmp) / "runs"}"
++
++[agent]
++env_unset = ["PYTHONPATH", "PYTHONHOME"]
++env_set = [
++  "PYTHONPATH={expected_child_pythonpath}",
++  "PYTHONNOUSERSITE=1",
++  "NO_PROXY=127.0.0.1,localhost,::1",
++  "no_proxy=127.0.0.1,localhost,::1",
++]
++
++[vllm]
++metrics_url = "http://127.0.0.1:1/metrics"
++api_base = "http://127.0.0.1:1/v1"
++models_url = "http://127.0.0.1:1/v1/models"
++request_timeout_seconds = 0.05
++
++[ascend]
++npu_smi = "{Path(tmp) / "missing-npu-smi"}"
++command_timeout_seconds = 0.05
++""".strip(),
++                encoding="utf-8",
++            )
+             env = os.environ.copy()
+-            env["PYTHONPATH"] = str(ROOT / "src")
++            env["PYTHONPATH"] = inherited_pythonpath
+             output_template = str(Path(tmp) / "{run_id}.env.json")
+             result = subprocess.run(
+                 [
+@@ -57,8 +92,8 @@
+                     "-m",
+                     "agentmon",
+                     "run",
+-                    "--output-root",
+-                    str(Path(tmp) / "runs"),
++                    "--config",
++                    str(config_path),
+                     "--",
+                     sys.executable,
+                     "-c",
+@@ -91,7 +126,9 @@
+             child_data = json.loads((Path(tmp) / f"{run_id}.env.json").read_text(encoding="utf-8"))
+             self.assertEqual(child_data["run_id"], run_id)
+             self.assertEqual(child_data["path"], str(Path(tmp) / f"{run_id}.env.json"))
+-            self.assertIsNone(child_data["pythonpath"])
++            self.assertEqual(child_data["pythonpath"], expected_child_pythonpath)
++            self.assertNotIn("/usr/local/Ascend", child_data["pythonpath"])
++            self.assertNotIn("/tmp/legacy-pythonpath", child_data["pythonpath"])
+             self.assertIsNone(child_data["pythonhome"])
+             self.assertEqual(child_data["py_no_user_site"], "1")
+             self.assertEqual(child_data["no_proxy"], "127.0.0.1,localhost,::1")

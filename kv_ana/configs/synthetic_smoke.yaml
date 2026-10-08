@@ -1,0 +1,22 @@
+{
+  "version": "2.0.1",
+  "experiment": {"split": "predefined", "seed": 10, "zero_baseline_degradation_policy": "record"},
+  "output_dir": "outputs/synthetic_smoke_v201",
+  "methods": [
+    {"name": "no_correction"},
+    {"name": "shared_residual_oracle"},
+    {"name": "pair_lowrank_oracle", "ranks": [1, 2, 4]},
+    {"name": "frozen_lowrank_oracle", "ranks": [1, 2, 4]},
+    {"name": "probe_mean", "probes": [1, 2, 4, 8]},
+    {"name": "probe_frozen_basis", "ranks": [4], "probes": [1, 2, 4, 8]},
+    {"name": "anchor_residual", "k": [1, 2, 4], "weighting": "inverse_distance"},
+    {"name": "random_expected", "budgets": [0.01, 0.10, 1.0]},
+    {"name": "boundary_first", "budgets": [0.10, 1.0]},
+    {"name": "joint_unit_oracle", "budgets": [0.10, 1.0]},
+    {"name": "static_layer", "budgets": [0.10], "granularities": ["neutral_partial", "group_atomic"], "config_seed": 10},
+    {"name": "static_position", "budgets": [0.10], "granularity": "neutral_partial", "position_binner": {"type": "normalized_depth", "bin_count": 8}, "config_seed": 10},
+    {"name": "static_joint", "budgets": [0.10], "granularity": "neutral_partial", "position_binner": {"type": "normalized_depth", "bin_count": 8}, "config_seed": 10},
+    {"name": "query_aware_selection"},
+    {"name": "daf_runtime"}
+  ]
+}
