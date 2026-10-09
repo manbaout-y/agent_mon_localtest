@@ -6,6 +6,8 @@
 
 2026-10-09 当前任务：[C=1 单请求存储与加载观测计划 V3](DSV41_C1_单请求存储与加载观测执行计划_V3_20261009.md)、[证据台账与最小材料清单 V3](DSV41_C1_证据台账与最小材料清单_V3_20261009.md)。本阶段先做一次请求的资源观测与Engram驻留解释，不以完整KV Hook为前置。
 
+采集入口现已实现：`agentmon/scripts/dsv41_c1_observe.py`默认零请求演练，正式模式至多一次POST。见[服务器操作手册](docs/dsv41_c1/SERVER_RUNBOOK.md)、[用户预检解读](docs/dsv41_c1/USER_PREFLIGHT_REVIEW.md)、[开发验收](docs/dsv41_c1/DEVELOPMENT_ACCEPTANCE.md)。离线测试不代表服务器真实观测完成。
+
 ```text
 hetero_state_lab/
 ├── agentmon/       Agent执行、P1 spans、资源观测、batch与分析
